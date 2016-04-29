@@ -1,26 +1,29 @@
 #include <debug.h>
+#include <fcntl.h>
 #include <runcmd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #define MAX_ARGS 20
 #define CMD_DELIMITERS " "
+#define EXECFLAGFILE ".execfailed~"
 
 int runcmd(const char* command, int* result, const int* io)
 {
 	char* args[MAX_ARGS], *cmd = NULL, *cur = NULL;
-	int nargs = 0, cstatus;
+	int nargs = 0, cstatus, fd;
 	pid_t cpid;
 
 	cmd = (char*) malloc((strlen(command)+1)*sizeof(char));			/* Memory leak on child process */
 	sysfail(cmd == NULL, -1);
 
 	strcpy(cmd, command);
-	strtok(cmd, CMD_DELIMITERS);
+	args[nargs++] = strtok(cmd, CMD_DELIMITERS);
 	while (nargs < MAX_ARGS && (cur = strtok(NULL, CMD_DELIMITERS)) != NULL)
 	{
 		args[nargs++] = cur;
@@ -37,26 +40,38 @@ int runcmd(const char* command, int* result, const int* io)
 	cpid = fork();
 	sysfail(cpid < 0, -1);
 
+	/* Child process code block */
 	if (cpid == 0)
 	{
 		execvp(args[0], args);
-		free(cmd);						/* This and the next line only execute if execvp fails */
-		exit(EXECFAILSTATUS);	
+
+		/* Only gets here if exec fails*/
+		close(open(EXECFLAGFILE, O_CREAT | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR));
+		free(cmd);					
+		exit(EXECFAILSTATUS);
 	}
-	else
+	/* Child process code block ends here */
+
+	waitpid(cpid, &cstatus, 0);
+	if (result != NULL)
 	{
-		waitpid(cpid, &cstatus, 0);
-		if (result != NULL)
+		*result = 0;
+		if (WIFEXITED(cstatus))
 		{
-			*result = 0;
-			if (WIFEXITED(cstatus))
+			*result |= WEXITSTATUS(cstatus);
+			*result |= NORMTERM;
+			if ((fd = open(EXECFLAGFILE, O_RDONLY)) != -1)
 			{
-				*result |= WEXITSTATUS(cstatus);
-				*result |= NORMTERM;
+				close(fd);
+				unlink(EXECFLAGFILE);
+			}
+			else
+			{
+				*result |= EXECOK;
 			}
 		}
 	}
-	
+
 	free(cmd);
 	return cpid;
 }
