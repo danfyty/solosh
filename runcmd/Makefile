@@ -28,11 +28,24 @@ test-static: test.o libruncmd.a
 %.d: %.c
 	gcc $(CPP_FLAGS) -I. -MM $< > $@
 
+include runcmd.d test.d
 
-
-.PHONY: clean
+.PHONY: clean install uninstall
 
 clean:
-	rm -f *.o *.d *.so *.a runcmd test test-static
+	rm -f *.o *.d *.so *.a runcmd test test-static runcmd.tgz
 
-include runcmd.d test.d
+install: libruncmd.a libruncmd.so runcmd.h
+	install -d $(PREFIX)/lib
+	install -d $(PREFIX)/include
+	install libruncmd.a  $(PREFIX)/lib
+	install libruncmd.so $(PREFIX)/lib
+	install runcmd.h $(PREFIX)/include
+
+uninstall: 
+	rm -rf $(PREFIX)/lib/libruncmd.a $(PREFIX)/lib/libruncmd.so $(PREFIX)/include/runcmd.h
+
+dist: runcmd.c runcmd.h test.c Makefile
+	mkdir runcmd
+	cp $^ runcmd
+	tar zcvf runcmd.tgz runcmd
