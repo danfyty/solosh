@@ -37,7 +37,7 @@ int runcmd(const char* command, int* result, const int* io)
 	int nargs = 0, cstatus, fd;
 	pid_t cpid;
 
-	cmd = (char*) malloc((strlen(command)+1)*sizeof(char));			/* Memory leak on child process */
+	cmd = (char*) malloc((strlen(command)+1)*sizeof(char));
 	sysfail(cmd == NULL, -1);
 
 	strcpy(cmd, command);

@@ -20,6 +20,8 @@
 #Starting with a very simple Makefile. It will likely get more elaborate later on.
 
 CPP_FLAGS = -ansi -Wall -pedantic-errors -D_POSIX_C_SOURCE=200809L
+CC = gcc
+AR = ar
 
 all: lib test
 
@@ -27,34 +29,34 @@ all: lib test
 lib: libruncmd.a libruncmd.so
 
 libruncmd.a: runcmd.o
-	ar rcs $@ $^
+	$(AR) rcs $@ $^
 
 libruncmd.so: runcmd-pic.o
-	gcc $(CPP_FLAGS) -shared $^ -o $@
+	$(CC) $(CPP_FLAGS) -shared $^ -o $@
 
 #A test program:
 test: test.o libruncmd.so
-	gcc $(CPP_FLAGS) test.o -L. -lruncmd -o $@
+	$(CC) $(CPP_FLAGS) test.o -L. -lruncmd -o $@
 
 test-static: test.o libruncmd.a
-	gcc $(CPP_FLAGS) test.o -L. -Wl,-Bstatic -lruncmd -Wl,-Bdynamic -o $@	
+	$(CC) $(CPP_FLAGS) test.o -L. -Wl,-Bstatic -lruncmd -Wl,-Bdynamic -o $@	
 
 #General rules: 
 %.o: %.c %.d
-	gcc $(CPP_FLAGS) -I. -c $<
+	$(CC) $(CPP_FLAGS) -I. -c $<
 
 %-pic.o: %.c %.d
-	gcc $(CPP_FLAGS) -I. -fPIC -c $< -o $@	
+	$(CC) $(CPP_FLAGS) -I. -fPIC -c $< -o $@	
 
 %.d: %.c
-	gcc $(CPP_FLAGS) -I. -MM $< > $@
+	$(CC) $(CPP_FLAGS) -I. -MM $< > $@
 
 include runcmd.d test.d
 
 .PHONY: all lib clean install uninstall
 
 clean:
-	rm -f *.o *.d *.so *.a test test-static runcmd.tgz
+	rm -f runcmd.o runcmd-pic.o runcmd.d libruncmd.so libruncmd.a test.o test.d test test-static runcmd.tgz
 
 install: libruncmd.a libruncmd.so runcmd.h
 	install -d $(PREFIX)/lib
