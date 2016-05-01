@@ -57,6 +57,7 @@ include runcmd.d test.d
 
 clean:
 	rm -f runcmd.o runcmd-pic.o runcmd.d libruncmd.so libruncmd.a test.o test.d test test-static runcmd.tgz
+	rm -rf runcmd
 
 install: libruncmd.a libruncmd.so runcmd.h
 	install -d $(PREFIX)/lib
@@ -68,7 +69,12 @@ install: libruncmd.a libruncmd.so runcmd.h
 uninstall: 
 	rm -rf $(PREFIX)/lib/libruncmd.a $(PREFIX)/lib/libruncmd.so $(PREFIX)/include/runcmd.h
 
-dist: runcmd.c runcmd.h test.c Makefile README
+dist: runcmd.c runcmd.h debug.h test.c Makefile README
+	rm -rf runcmd
 	mkdir runcmd
 	cp $^ runcmd
 	tar zcvf runcmd.tgz runcmd
+
+distcheck: dist
+	if make -C runcmd; then echo "\nruncmd.tgz is ready for distribution"; \
+	else echo "\nSomething wrong with runcmd.tgz"; fi; echo
