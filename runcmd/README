@@ -1,0 +1,13 @@
+This is a implementation of the POSIXeg (https://gitlab.com/monaco/posixeg) "libruncmd" exercise.
+
+As specified in the exercise README:
+	"make" will build the static and dynamic versions of the library in the current directory
+	"make install PREFIX=<path>" will install the library in the specified path.
+	"make uninstall PREFIX=<path>" undoes what make install does.
+	"make dist" packs the library in a tarball (runcmd.tgz)
+
+"make" will also build a simple test program named "test". It can be used to execute a command using the library: use "./test <command> <argument 1> <argument 2> ..." or "./test "<command> <argument 1> <argument 2> ..."". The program will display the information about the execution provided by the library on termination.
+"test" is linked dynamically with libruncmd by default. You can build the static version with "make test-static".
+
+The library can be tested against POSIXeg's test-runcmd program by following the instructions under "HOW TO TEST YOUR IMPLEMENTATION" on the exercise's README file.
+

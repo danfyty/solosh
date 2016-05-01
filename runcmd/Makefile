@@ -1,6 +1,27 @@
+#    Makefile for building libruncmd
+#    Copyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>
+#
+#    This file is part of SoloSH.
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
 #Starting with a very simple Makefile. It will likely get more elaborate later on.
 
 CPP_FLAGS = -ansi -Wall -pedantic-errors -D_POSIX_C_SOURCE=200809L
+
+all: lib test
 
 #The library:
 lib: libruncmd.a libruncmd.so
@@ -30,10 +51,10 @@ test-static: test.o libruncmd.a
 
 include runcmd.d test.d
 
-.PHONY: clean install uninstall
+.PHONY: all lib clean install uninstall
 
 clean:
-	rm -f *.o *.d *.so *.a runcmd test test-static runcmd.tgz
+	rm -f *.o *.d *.so *.a test test-static runcmd.tgz
 
 install: libruncmd.a libruncmd.so runcmd.h
 	install -d $(PREFIX)/lib
@@ -45,7 +66,7 @@ install: libruncmd.a libruncmd.so runcmd.h
 uninstall: 
 	rm -rf $(PREFIX)/lib/libruncmd.a $(PREFIX)/lib/libruncmd.so $(PREFIX)/include/runcmd.h
 
-dist: runcmd.c runcmd.h test.c Makefile
+dist: runcmd.c runcmd.h test.c Makefile README
 	mkdir runcmd
 	cp $^ runcmd
 	tar zcvf runcmd.tgz runcmd
