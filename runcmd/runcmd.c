@@ -29,12 +29,11 @@
 
 #define MAX_ARGS 20
 #define CMD_DELIMITERS " "
-#define EXECFLAGFILE ".execfailed~"
 
 int runcmd(const char* command, int* result, const int* io)
 {
 	char* args[MAX_ARGS], *cmd = NULL, *cur = NULL;
-	int nargs = 0, cstatus, fd;
+	int nargs = 0, cstatus, execfailpipe[2];
 	pid_t cpid;
 
 	cmd = (char*) malloc((strlen(command)+1)*sizeof(char));
@@ -55,6 +54,8 @@ int runcmd(const char* command, int* result, const int* io)
 
 	args[nargs] = NULL;
 
+	sysfail(pipe(execfailpipe) < 0, -1);
+
 	cpid = fork();
 	sysfail(cpid < 0, -1);
 
@@ -64,12 +65,14 @@ int runcmd(const char* command, int* result, const int* io)
 		execvp(args[0], args);
 
 		/* Only gets here if exec fails*/
-		close(open(EXECFLAGFILE, O_CREAT | O_TRUNC | O_RDWR, S_IRUSR | S_IWUSR));
-		free(cmd);					
+		write(execfailpipe[1], "@", 1);
+		close(execfailpipe[0]);
+		close(execfailpipe[1]);
 		exit(EXECFAILSTATUS);
 	}
 	/* Child process code block ends here */
 
+	close(execfailpipe[1]);
 	waitpid(cpid, &cstatus, 0);
 	if (result != NULL)
 	{
@@ -78,18 +81,13 @@ int runcmd(const char* command, int* result, const int* io)
 		{
 			*result |= WEXITSTATUS(cstatus);
 			*result |= NORMTERM;
-			if ((fd = open(EXECFLAGFILE, O_RDONLY)) != -1)
-			{
-				close(fd);
-				unlink(EXECFLAGFILE);
-			}
-			else
+			if (read(execfailpipe[0], NULL, 1) == 0)
 			{
 				*result |= EXECOK;
 			}
-		}
+		}	
 	}
-
+	close(execfailpipe[0]);
 	free(cmd);
 	return cpid;
 }
