@@ -8,12 +8,7 @@ As specified in the exercise README:
 	"make distcheck" verifies if the distributed source (runcmd.tgz) can be built correctly.
 
 "make" will also build a simple test program named "test". It can be used to execute a command using the library: use "./test <command> <argument 1> <argument 2> ..." or "./test "<command> <argument 1> <argument 2> ..."". The program will display the information about the execution provided by the library on termination.
-"test" is linked dynamically with libruncmd by default. In order to run it, you must do
-
-LD_LIBRARY_PATH=.
-export LD_LIBRARY_PATH
-
-beforehand in your shell to allow the library to be found.
+"test" is linked dynamically with libruncmd by default. 
 
 You can build the static version of "test" with "make test-static" and using "./test-static".
 
