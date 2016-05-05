@@ -36,7 +36,7 @@ libruncmd.so: runcmd-pic.o
 
 #A test program:
 test: test.o libruncmd.so
-	$(CC) $(CPP_FLAGS) -Wl,-rpath=. test.o -L. -lruncmd -o $@
+	$(CC) $(CPP_FLAGS) -Wl,-rpath='$$ORIGIN' test.o -L. -lruncmd -o $@
 
 test-static: test.o libruncmd.a
 	$(CC) $(CPP_FLAGS) test.o -L. -Wl,-Bstatic -lruncmd -Wl,-Bdynamic -o $@	
