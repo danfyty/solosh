@@ -1,4 +1,4 @@
-/*   iotest.c - a simple libruncmd testing program
+/*   test_onexit.c - a simple libruncmd testing program for testing runcmd_onexit function calling feature
      Copyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>
 
      This file is part of SoloSH.
@@ -17,27 +17,41 @@
      along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <runcmd.h>
-#include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+
+void onexit()
+{
+	printf("runcmd_onexit() was ran\n");
+	exit(0);
+}
 
 int main(int argc, char* argv[])
 {
-	int ret = 0, io[3];
-	
-	if (argc != 5)
+	int ret = 0, i;
+	char buffer[1024];
+
+	if (argc < 2)
 	{
-		printf("Usage: %s \"[COMMAND]\" [INPUT FILE] [OUTPUT FILE] [ERROR FILE]\n", argv[0]);
+		printf("Error: no command to execute.\n");
 		return 0;
 	}
 
-	io[0] = open(argv[2], O_CREAT | O_RDONLY, S_IRUSR | S_IWUSR);
-	io[1] = open(argv[3], O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR);
-	io[2] = open(argv[4], O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR);
-	
-	runcmd(argv[1], &ret, io);
+	strcpy(buffer, argv[1]);
+	i = 2;
+	while (i < argc)
+	{
+		strcat(buffer, " ");
+		strcat(buffer, argv[i++]);
+	}
 
-	printf("EXITSTATUS = %d\nIS_EXECOK = %d\nIS_NORMTERM = %d\n", EXITSTATUS(ret), IS_EXECOK(ret), IS_NORMTERM(ret));
+	runcmd_onexit = onexit;
+	runcmd(buffer, &ret, NULL);
+
+	printf("EXITSTATUS = %d\nIS_EXECOK = %d\nIS_NORMTERM = %d\nIS_NONBLOCK = %d\n", EXITSTATUS(ret), IS_EXECOK(ret), IS_NORMTERM(ret), IS_NONBLOCK(ret));
+	
+	while(1);
 	return 0;
 }

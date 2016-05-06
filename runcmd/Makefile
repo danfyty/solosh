@@ -19,7 +19,7 @@
 CPP_FLAGS = -ansi -Wall -pedantic-errors -D_POSIX_C_SOURCE=200809L
 CC = gcc
 AR = ar
-TEST_BIN = test iotest
+TEST_BIN = test test_io test_onexit
 
 
 all: lib $(TEST_BIN)
@@ -53,7 +53,7 @@ $(TEST_BIN): $$@.o libruncmd.so
 %.d: %.c
 	$(CC) $(CPP_FLAGS) -I. -MM $< > $@
 
-include runcmd.d test.d iotest.d
+include runcmd.d $(TEST_BIN:%=%.d)
 
 .PHONY: all lib clean install uninstall
 

@@ -19,6 +19,7 @@
 #include <debug.h>
 #include <fcntl.h>
 #include <runcmd.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,10 +31,12 @@
 #define MAX_ARGS 20
 #define CMD_DELIMITERS " "
 
+void child_term_handler(int sig, siginfo_t* info, void *u);
+
 int runcmd(const char* command, int* result, const int* io)
 {
 	char* args[MAX_ARGS], *cmd = NULL, *cur = NULL;
-	int nargs = 0, cstatus, execfailpipe[2];
+	int nargs = 0, cstatus, execfailpipe[2], noblock = 0;
 	pid_t cpid;
 
 	cmd = (char*) malloc((strlen(command)+1)*sizeof(char));
@@ -41,10 +44,9 @@ int runcmd(const char* command, int* result, const int* io)
 
 	strcpy(cmd, command);
 	args[nargs++] = strtok(cmd, CMD_DELIMITERS);
+
 	while (nargs < MAX_ARGS && (cur = strtok(NULL, CMD_DELIMITERS)) != NULL)
-	{
 		args[nargs++] = cur;
-	}
 
 	if (nargs == MAX_ARGS && strtok(NULL, CMD_DELIMITERS) != NULL)
 	{
@@ -53,6 +55,9 @@ int runcmd(const char* command, int* result, const int* io)
 	}
 
 	args[nargs] = NULL;
+	noblock = args[nargs-1][0] == '&';
+	if (noblock)
+		args[--nargs] = NULL;
 
 	sysfail(pipe(execfailpipe) < 0, -1);
 
@@ -78,28 +83,52 @@ int runcmd(const char* command, int* result, const int* io)
 		write(execfailpipe[1], "@", 1);
 		close(execfailpipe[0]);
 		close(execfailpipe[1]);
+		free(cmd);
 		exit(EXECFAILSTATUS);
 	}
 	/* Child process code block ends here */
 
 	close(execfailpipe[1]);
-	waitpid(cpid, &cstatus, 0);
-	if (result != NULL)
+	if (noblock)
 	{
-		*result = 0;
-		if (WIFEXITED(cstatus))
+		struct sigaction act;
+
+		memset(&act, 0, sizeof(struct sigaction));
+		act.sa_flags |= SA_SIGINFO;
+		act.sa_sigaction = child_term_handler;
+		sigaction(SIGCHLD, &act, NULL);
+
+		if (result != NULL)
+			*result = NONBLOCK;
+	}
+	else
+	{
+		waitpid(cpid, &cstatus, 0);
+		if (result != NULL)
 		{
-			*result |= WEXITSTATUS(cstatus);
-			*result |= NORMTERM;
-			if (read(execfailpipe[0], NULL, 1) == 0)
+			*result = 0;
+			if (WIFEXITED(cstatus))
 			{
-				*result |= EXECOK;
-			}
-		}	
+				*result |= WEXITSTATUS(cstatus);
+				*result |= NORMTERM;
+				if (read(execfailpipe[0], NULL, 1) == 0)
+				{
+					*result |= EXECOK;
+				}
+			}	
+		}
 	}
 	close(execfailpipe[0]);
 	free(cmd);
 	return cpid;
+}	
+
+void child_term_handler(int sig, siginfo_t* info, void *u)
+{
+	pid_t pid = info->si_pid;
+	waitpid(pid, NULL, 0);
+	if (runcmd_onexit != NULL)
+		runcmd_onexit();
 }
 
 void (*runcmd_onexit)(void) = NULL;
