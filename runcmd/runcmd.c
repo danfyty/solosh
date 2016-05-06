@@ -30,6 +30,9 @@
 
 #define MAX_ARGS 20
 #define CMD_DELIMITERS " "
+#define MAX_PROCESS_PID_VALUE (1 << 15)
+
+static int nonblock_flag[MAX_PROCESS_PID_VALUE];
 
 void child_term_handler(int sig, siginfo_t* info, void *u);
 
@@ -38,6 +41,9 @@ int runcmd(const char* command, int* result, const int* io)
 	char* args[MAX_ARGS], *cmd = NULL, *cur = NULL;
 	int nargs = 0, cstatus, execfailpipe[2], noblock = 0;
 	pid_t cpid;
+	struct sigaction act;
+
+	/* Parsing command */
 
 	cmd = (char*) malloc((strlen(command)+1)*sizeof(char));
 	sysfail(cmd == NULL, -1);
@@ -58,6 +64,15 @@ int runcmd(const char* command, int* result, const int* io)
 	noblock = args[nargs-1][0] == '&';
 	if (noblock)
 		args[--nargs] = NULL;
+
+	/* Registering SIGCHLD handler */
+
+	memset(&act, 0, sizeof(struct sigaction));
+	act.sa_flags |= SA_SIGINFO;
+	act.sa_sigaction = child_term_handler;
+	sysfail(sigaction(SIGCHLD, &act, NULL) < 0, -1);
+
+	/* Creating pipe used to detect exec failure. Forking.*/
 
 	sysfail(pipe(execfailpipe) < 0, -1);
 
@@ -91,15 +106,9 @@ int runcmd(const char* command, int* result, const int* io)
 	close(execfailpipe[1]);
 	if (noblock)
 	{
-		struct sigaction act;
-
-		memset(&act, 0, sizeof(struct sigaction));
-		act.sa_flags |= SA_SIGINFO;
-		act.sa_sigaction = child_term_handler;
-		sigaction(SIGCHLD, &act, NULL);
-
 		if (result != NULL)
 			*result = NONBLOCK;
+		nonblock_flag[cpid] = 1;
 	}
 	else
 	{
@@ -112,9 +121,7 @@ int runcmd(const char* command, int* result, const int* io)
 				*result |= WEXITSTATUS(cstatus);
 				*result |= NORMTERM;
 				if (read(execfailpipe[0], NULL, 1) == 0)
-				{
 					*result |= EXECOK;
-				}
 			}	
 		}
 	}
@@ -125,10 +132,16 @@ int runcmd(const char* command, int* result, const int* io)
 
 void child_term_handler(int sig, siginfo_t* info, void *u)
 {
+	int status = 0;
 	pid_t pid = info->si_pid;
-	waitpid(pid, NULL, 0);
-	if (runcmd_onexit != NULL)
-		runcmd_onexit();
+
+	waitpid(pid, &status, 0);
+	if (nonblock_flag[pid])
+	{
+		nonblock_flag[pid] = 0;
+		if (runcmd_onexit != NULL)
+			runcmd_onexit();
+	}
 }
 
 void (*runcmd_onexit)(void) = NULL;
