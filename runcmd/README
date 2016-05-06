@@ -7,9 +7,9 @@ As specified in the exercise README:
 	"make dist" packs the library in a tarball (runcmd.tgz)
 	"make distcheck" verifies if the distributed source (runcmd.tgz) can be built correctly.
 
-"make" will also build a simple test program named "test". It can be used to execute commands using the library. Just run the program and input lines with the desired commands. Each line will be sent to runcmd as a command, and the information provided by runcmd in *result  will be displayed on screen, as well as the function's return value. A notice will also be displayed every time runcmd_exit() is executed. The program may also be used to test I/O redirection: use "./test [INPUT FILE] [OUTPUT FILE] [ERROR FILE]" and runcmd should perform the redirection accordingly.
+"make" will also build a simple test program named "test". It can be used to execute commands using the library. Just run the program and input lines with the desired commands. Each line will be sent to runcmd as a command, and the information provided by runcmd in *result  will be displayed on screen, as well as the function's return value. A notice will also be displayed every time runcmd_exit() is executed. The program may also be used to test I/O redirection: use "./test [INPUT FILE] [OUTPUT FILE] [ERROR FILE]" and runcmd should perform the redirection accordingly. You may terminate the test program via a line containing only "exit".
 
-You can build the static version of "test" with "make test-static" and using "./test-static".
+You normally would be able to build the static version of "test" with "make test-static" and using "./test-static". As of right now this is not possible and it will remain this way until I figure out how to create the Makefile target the way I desire or give up and create a simpler target.
 
 The library can be tested against POSIXeg's test-runcmd program by following the instructions under "HOW TO TEST YOUR IMPLEMENTATION" on the exercise's README file.
 
