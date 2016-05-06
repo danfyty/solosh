@@ -62,6 +62,16 @@ int runcmd(const char* command, int* result, const int* io)
 	/* Child process code block */
 	if (cpid == 0)
 	{
+		if (io != NULL)
+		{
+			int i;
+			for (i = 0; i < 3; i++)
+			{
+				close(i);
+				dup(io[i]);
+				close(io[i]);
+			}
+		}
 		execvp(args[0], args);
 
 		/* Only gets here if exec fails*/

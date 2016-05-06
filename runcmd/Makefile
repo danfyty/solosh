@@ -16,14 +16,13 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
-#Starting with a very simple Makefile. It will likely get more elaborate later on.
-
 CPP_FLAGS = -ansi -Wall -pedantic-errors -D_POSIX_C_SOURCE=200809L
 CC = gcc
 AR = ar
+TEST_BIN = test iotest
 
-all: lib test
+
+all: lib $(TEST_BIN)
 
 #The library:
 lib: libruncmd.a libruncmd.so
@@ -34,12 +33,15 @@ libruncmd.a: runcmd.o
 libruncmd.so: runcmd-pic.o
 	$(CC) $(CPP_FLAGS) -shared $^ -o $@
 
-#A test program:
-test: test.o libruncmd.so
-	$(CC) $(CPP_FLAGS) -Wl,-rpath='$$ORIGIN' test.o -L. -lruncmd -o $@
+.SECONDEXPANSION:
 
-test-static: test.o libruncmd.a
-	$(CC) $(CPP_FLAGS) test.o -L. -Wl,-Bstatic -lruncmd -Wl,-Bdynamic -o $@	
+#Test programs:
+
+$(TEST_BIN): $$@.o libruncmd.so
+	$(CC) $(CPP_FLAGS) -Wl,-rpath='$$ORIGIN' $@.o -L. -lruncmd -o $@
+
+#$(TEST_BIN:%=%-static): $($@:%-static=%.o) libruncmd.a					#????????
+#	$(CC) $(CPP_FLAGS) $< -L. -Wl,-Bstatic -lruncmd -Wl,-Bdynamic -o $@	
 
 #General rules: 
 %.o: %.c %.d
@@ -51,12 +53,12 @@ test-static: test.o libruncmd.a
 %.d: %.c
 	$(CC) $(CPP_FLAGS) -I. -MM $< > $@
 
-include runcmd.d test.d
+include runcmd.d test.d iotest.d
 
 .PHONY: all lib clean install uninstall
 
 clean:
-	rm -f runcmd.o runcmd-pic.o runcmd.d libruncmd.so libruncmd.a test.o test.d test test-static runcmd.tgz
+	rm -f runcmd.o runcmd-pic.o runcmd.d libruncmd.so libruncmd.a $(TEST_BIN) $(TEST_BIN:%=%-static) $(TEST_BIN:%=%.o) $(TEST_BIN:%=%.d) runcmd.tgz
 	rm -rf runcmd
 
 install: libruncmd.a libruncmd.so runcmd.h
@@ -69,7 +71,7 @@ install: libruncmd.a libruncmd.so runcmd.h
 uninstall: 
 	rm -rf $(PREFIX)/lib/libruncmd.a $(PREFIX)/lib/libruncmd.so $(PREFIX)/include/runcmd.h
 
-dist: runcmd.c runcmd.h debug.h test.c Makefile README
+dist: runcmd.c runcmd.h debug.h $(TEST_BIN:%=%.c) Makefile README
 	rm -rf runcmd
 	mkdir runcmd
 	cp $^ runcmd
