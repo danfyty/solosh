@@ -32,6 +32,8 @@
 #define CMD_DELIMITERS " "
 #define MAX_PROCESS_PID_VALUE (1 << 15)
 
+/* If you know of a solution to the "persistent non-blocking mode" problem that doesn't involve 
+using global variables, feel free to let me know. I don't. */
 static int nonblock_flag[MAX_PROCESS_PID_VALUE];
 
 void child_term_handler(int sig, siginfo_t* info, void *u);

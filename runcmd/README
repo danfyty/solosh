@@ -7,8 +7,7 @@ As specified in the exercise README:
 	"make dist" packs the library in a tarball (runcmd.tgz)
 	"make distcheck" verifies if the distributed source (runcmd.tgz) can be built correctly.
 
-"make" will also build a simple test program named "test". It can be used to execute a command using the library: use "./test <command> <argument 1> <argument 2> ..." or "./test "<command> <argument 1> <argument 2> ..."". The program will display the information about the execution provided by the library on termination.
-"test" is linked dynamically with libruncmd by default. 
+"make" will also build a simple test program named "test". It can be used to execute commands using the library. Just run the program and input lines with the desired commands. Each line will be sent to runcmd as a command, and the information provided by runcmd in *result  will be displayed on screen, as well as the function's return value. A notice will also be displayed every time runcmd_exit() is executed. The program may also be used to test I/O redirection: use "./test [INPUT FILE] [OUTPUT FILE] [ERROR FILE]" and runcmd should perform the redirection accordingly.
 
 You can build the static version of "test" with "make test-static" and using "./test-static".
 

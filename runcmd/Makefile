@@ -19,7 +19,7 @@
 CPP_FLAGS = -ansi -Wall -pedantic-errors -D_POSIX_C_SOURCE=200809L
 CC = gcc
 AR = ar
-TEST_BIN = test test_io test_onexit
+TEST_BIN = test
 
 
 all: lib $(TEST_BIN)
