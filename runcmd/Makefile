@@ -41,7 +41,6 @@ $(TEST_BIN): $$@.o libruncmd.so
 	$(CC) $(CPP_FLAGS) -Wl,-rpath='$$ORIGIN' $@.o -L. -lruncmd -o $@
 
 $(TEST_BIN:%=%-static): $$(patsubst %-static, %.o, $$@) libruncmd.a
-	$(warning $<)
 	$(CC) $(CPP_FLAGS) $< -L. -Wl,-Bstatic -lruncmd -Wl,-Bdynamic -o $@	
 
 #General rules: 

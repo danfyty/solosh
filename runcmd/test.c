@@ -26,7 +26,7 @@
 
 void onexit()
 {
-	printf("\nruncmd_exit() has just ran.\n");	
+	printf("\nruncmd_exit() has just ran.\n> ");	
 }
 
 int main(int argc, char* argv[])
@@ -41,6 +41,13 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 
+	printf("\n=========================================================================\n");
+	printf("LIBRUNCMD TESTING PROGRAM\n");
+	printf("Enter the commands you wish to run through libruncmd, one per line.\n");
+	printf("Enter 'exit' to quit the program.\n");
+	printf("For more information, see README.\n");
+	printf("=========================================================================\n\n");
+
 	if (argc == 4)
 	{
 		io[0] = open(argv[1], O_CREAT | O_RDONLY, S_IRUSR | S_IWUSR);
@@ -49,10 +56,10 @@ int main(int argc, char* argv[])
 	}
 
 	runcmd_onexit = onexit;
-
 	
 	while(!done)
 	{
+		printf("> ");
 		while(fgets(buffer, LINE_BUFFER_SIZE, stdin), !(len = strlen(buffer)));		/* The 'while' is necessary. SIGCHLD may unblock the program while it waits for input */
 		if (buffer[len-1] == '\n')
 			buffer[len-1] = '\0';
@@ -65,10 +72,8 @@ int main(int argc, char* argv[])
 			else
 				ret = runcmd(buffer, &result, io);
 		
-			printf("***\n");
-			printf("Command: \"%s\"\nEXITSTATUS = %d\nIS_EXECOK = %d\nIS_NORMTERM = %d\nIS_NONBLOCK = %d\n", buffer, EXITSTATUS(result), IS_EXECOK(result), IS_NORMTERM(result), IS_NONBLOCK(result));
+			printf("COMMAND: \"%s\"\nEXITSTATUS = %d\nIS_EXECOK = %d\nIS_NORMTERM = %d\nIS_NONBLOCK = %d\n", buffer, EXITSTATUS(result), IS_EXECOK(result), IS_NORMTERM(result), IS_NONBLOCK(result));
 			printf("runcmd returned %d.\n", ret);
-			printf("***\n");
 		}
 		buffer[0] = '\0';	/* Guarantees - together with the while loop above - that old input won't be reused */
 	}
