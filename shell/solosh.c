@@ -76,43 +76,6 @@ JOB* create_job(const char* command)
 	return job;	
 }
 
-pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int close_this, int close_this2)
-{
-	pid_t cpid = fork();
-
-	error(cpid < 0, -1);
-	
-	if (cpid == 0)
-	{
-		if (close_this != -1)
-			close(close_this);
-
-		if (close_this2 != -1)
-			close(close_this2);
-
-		if (input_file != 0)
-		{
-			close(0);
-			dup(input_file);
-			close(input_file);
-		}
-		if (output_file != 1)
-		{
-			close(1);
-			close(2);
-			dup(output_file);
-			dup(output_file);
-			close(output_file);
-		}
-		execvp(cmd[0], cmd);
-		exit(EXIT_FAILURE);
-	}
-
-	if (block)
-		waitpid(cpid, NULL, 0);
-	return cpid;
-}
-
 void destroy_pipes(int*** pipes, int n)
 {
 	int i, **p;
@@ -152,10 +115,43 @@ int** create_pipes(int n)
 	return pipes;
 }
 
+pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int** pipes, int npipes)
+{
+	pid_t cpid = fork();
+
+	error(cpid < 0, -1);
+	
+	if (cpid == 0)
+	{
+		if (input_file != 0)
+		{
+			close(0);
+			dup(input_file);
+			close(input_file);
+		}
+		if (output_file != 1)
+		{
+			close(1);
+			close(2);
+			dup(output_file);
+			dup(output_file);
+			close(output_file);
+		}
+		destroy_pipes(&pipes, npipes);
+		execvp(cmd[0], cmd);
+		exit(EXIT_FAILURE);
+	}
+
+	if (block)
+		waitpid(cpid, NULL, 0);
+	return cpid;
+}
+
+
 int runjob(JOB* job)
 {
 	char*** it;
-	int ncmd = 0, i, **pipes;
+	int ncmd = 0, i, **pipes = NULL;
 
 	if (job == NULL || job->cmd == NULL)
 		return -1;
@@ -176,7 +172,7 @@ int runjob(JOB* job)
 
 	for (i = 0; i < ncmd; i++)
 	{
-		int input, output, block = 0, close_this = -1, close_this2 = -1;
+		int input, output, block = 0;
 		
 		if (i == 0)
 		{
@@ -186,10 +182,7 @@ int runjob(JOB* job)
 				input = 0;
 		}
 		else
-		{
 			input = pipes[i-1][0];
-			close_this = pipes[i-1][1];
-		}
 
 		if (i == ncmd-1)
 		{
@@ -200,13 +193,10 @@ int runjob(JOB* job)
 			block = job->blocking;
 		}
 		else
-		{
 			output = pipes[i][1];
-			close_this2 = pipes[i][0];
-		}
 		
-		/*printf("runcmd(%s, %d, %d, %d, %d, %d)\n", job->cmd[i][0], input, output, block, close_this, close_this2);*/
-		runcmd(job->cmd[i], input, output, block, close_this, close_this2);
+		/*printf("runcmd(%s, %d, %d, %d)\n", job->cmd[i][0], input, output, block);*/
+		runcmd(job->cmd[i], input, output, block, pipes, ncmd-1);
 	}
 
 	if (ncmd > 1)
