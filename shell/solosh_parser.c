@@ -37,15 +37,13 @@ char** split_around_blank(const char* str)
 			s = new_s;
 		}
 	}
-
-	free(cpstr);
 	return s;
 }
 
 char*** make_cmd_array(const char* command)
 {
-	char* aux, *cpcommand, ***ret;
-	int len, nprog = 0, capprog = INITIAL_TOKEN_ARRAY_CAP, i;
+	char** aux, *cpcommand, ***ret;
+	int len, nprog = 0, i;
 
 	if (command == NULL)
 		return NULL;
@@ -56,31 +54,20 @@ char*** make_cmd_array(const char* command)
 	error(cpcommand == NULL, NULL);
 	strcpy(cpcommand, command);
 
-	ret = (char***) malloc(sizeof(char**)*capprog);
-	error(ret == NULL, (free(cpcommand), NULL));
+	aux = (char**) malloc(sizeof(char*)*len);
+	error(aux == NULL, (free(cpcommand),  NULL));
 
-	aux = strtok(cpcommand, SLSH_PIPE);
-	while (aux != NULL)
-	{
-		ret[nprog++] = split_around_blank(aux);
-		if (nprog == capprog)
-		{
-			char*** new_ret;
+	aux[nprog++] = strtok(cpcommand, SLSH_PIPE);
+	while ((aux[nprog++] = strtok(NULL, SLSH_PIPE)) != NULL);
 
-			capprog *= 2;
-			new_ret = (char***) realloc(ret, sizeof(char**)*capprog);
-			if (new_ret == NULL)
-			{
-				free(cpcommand);
-				for (i = 0; i < nprog; i++)
-					free(ret[i]);
-				free(ret);
-				return NULL;
-			}
-			ret = new_ret;
-		}
-		aux = strtok(NULL, "|");
-	}
+	ret = (char***) malloc(sizeof(char**)*(nprog+1));
+	error(ret == NULL, (free(cpcommand),(free(aux), NULL)));
+
+	for (i = 0; i < nprog; i++)
+		ret[i] = split_around_blank(aux[i]);
+	
+	ret[nprog] = NULL;
+	free(aux);
 	free(cpcommand);
 	return ret;
 }
@@ -96,8 +83,9 @@ void print_job_cmd(char*** cmd)
 	it = cmd;
 	while (*it != NULL)
 	{
-		it2 = (*it);
-		while(*it2 != NULL)
+		it2 = *it;
+		first = 1;
+		while (*it2 != NULL)
 		{
 			if (first)
 				first = 0;
@@ -106,6 +94,7 @@ void print_job_cmd(char*** cmd)
 			printf("%s", *it2);
 			it2++;
 		}
+		printf("\n");
 		it++;
 	}
 }

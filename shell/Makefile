@@ -4,10 +4,10 @@ BIN=solosh
 PARSER = solosh_parser
 
 $(BIN) : % : %.o $(PARSER:%=%.o)
-	gcc -Wall -Werror --ansi --pedantic-errors -D_POSIX_C_SOURCE=200809L -I. $^ -o $@
+	gcc -Wall -Werror --ansi --pedantic-errors -D_POSIX_C_SOURCE=200809L -g -I. $^ -o $@
 
 %.o: %.c
-	gcc -Wall -Werror --ansi --pedantic-errors -D_POSIX_C_SOURCE=200809L -I. -c $<
+	gcc -Wall -Werror --ansi --pedantic-errors -D_POSIX_C_SOURCE=200809L -g -I. -c $<
 
 include $(BIN:%=%.d) $(PARSER:%=%.d)
 
