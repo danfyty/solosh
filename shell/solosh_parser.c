@@ -174,17 +174,17 @@ int get_io_redir_file(const char* command, int io)
 	return file;	
 }
 
-int is_noblock(const char* command)
+int is_blocking(const char* command)
 {
 	int i = strlen(command) - 1;
 
 	while (i)
 	{
 		if (command[i] == SLSH_NOBLOCK && is_blank(command[i-1]))
-			return 1;
+			return 0;
 		i--;
 	}
-	return 0;
+	return 1;
 }
 
 char* clean_command(const char* command)

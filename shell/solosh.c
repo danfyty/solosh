@@ -64,7 +64,7 @@ JOB* create_job(const char* command)
 	job->inputfd = get_io_redir_file(command, SLSH_INPUT);
 	job->outputfd = get_io_redir_file(command, SLSH_OUTPUT);
 
-	job->blocking = is_noblock(command);
+	job->blocking = is_blocking(command);
 
 	cleancmd = clean_command(command);
 	error(cleancmd == NULL, (free(job->name), (free(job), NULL)));

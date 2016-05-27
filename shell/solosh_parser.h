@@ -13,6 +13,6 @@ char*** make_cmd_array(const char* command);
 void print_job_cmd(char*** cmd);
 int get_io_redir_file(const char* command, int io);
 char* clean_command(const char* command);
-int is_noblock(const char* command);
+int is_blocking(const char* command);
 
 #endif
