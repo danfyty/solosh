@@ -7,19 +7,46 @@
 
 #define INITIAL_TOKEN_ARRAY_CAP 10
 
+static int is_blank(char c)
+{
+	char blank[] = SLSH_BLANK_CHARS;
+	int i, len;
+
+	len = strlen(blank);
+
+	for (i = 0; i < len; i++)
+	{
+		if (c == blank[i])
+			return 1;
+	}
+	return 0;
+}
+
+char* trim_front(const char* str)
+{
+	int len = strlen(str), i;
+	char* ret = (char*) malloc(sizeof(char)*(len+1));
+	
+	if (ret == NULL)
+		return NULL;
+	
+	i = 0;
+	while (i < len && is_blank(str[i]))
+		i++;
+	strcpy(ret, str+i);
+	return ret;
+}
+
 char** split_around_blank(const char* str)
 {
-	int len, captok = INITIAL_TOKEN_ARRAY_CAP, ntok = 0;
+	int captok = INITIAL_TOKEN_ARRAY_CAP, ntok = 0;
 	char** s, *cpstr;
 
 	if (str == NULL)
 		return NULL;
 
-	len = strlen(str);
-
-	cpstr = (char*) malloc(sizeof(char)*(len+1));
+	cpstr = trim_front(str);
 	error(cpstr == NULL, NULL);
-	strcpy(cpstr, str);
 	
 	s = (char**) malloc(sizeof(char*)*captok);
 	error(s == NULL, (free(cpstr), NULL));
@@ -97,21 +124,6 @@ void print_job_cmd(char*** cmd)
 		printf("\n");
 		it++;
 	}
-}
-
-static int is_blank(char c)
-{
-	char blank[] = SLSH_BLANK_CHARS;
-	int i, len;
-
-	len = strlen(blank);
-
-	for (i = 0; i < len; i++)
-	{
-		if (c == blank[i])
-			return 1;
-	}
-	return 0;
 }
 
 int get_io_redir_file(const char* command, int io)

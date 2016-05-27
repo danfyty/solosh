@@ -35,7 +35,7 @@ void destroy_job(JOB** job)
 	{
 		while (*iter != NULL)
 		{
-			/*free(**iter); TODO MEMORY LEAK FIX*/
+			free(**iter);
 			free(*iter);
 			iter++;
 		}
