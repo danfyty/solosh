@@ -22,7 +22,7 @@ static int is_blank(char c)
 	return 0;
 }
 
-char* trim_front(const char* str)
+static char* trim_front(const char* str)
 {
 	int len = strlen(str), i;
 	char* ret = (char*) malloc(sizeof(char)*(len+1));

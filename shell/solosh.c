@@ -17,6 +17,67 @@ typedef struct job
 	int blocking;
 }JOB;
 
+const int nbcmd = 6;
+const char* builtin_cmd[] = {"bg", "cd", "exit", "fg", "jobs", "quit"};
+
+int get_builtin_cmd(const char* cmd)
+{
+	int i;
+	
+	if (cmd == NULL)
+		return 0;
+	
+	for (i = 0; i < nbcmd; i++)
+	{
+		if (!strcmp(builtin_cmd[i], cmd))
+			return i+1;
+	}
+	return 0;
+}
+
+int run_builtin_cmd(char* cmd[])
+{
+	int id;
+
+	if (cmd == NULL)
+		return -1;
+	
+	id = get_builtin_cmd(cmd[0]);
+
+	switch(id)
+	{
+		/* bg */
+		case 1:
+			/* TODO*/
+			break;
+
+		/* cd */
+		case 2:
+			error(chdir(cmd[1]) < 0, -1);
+			break;
+
+		/* exit and quit */
+		case 3:
+		case 6:
+			exit(0);
+			break;
+
+		/* fg */
+		case 4:
+			/* TODO */
+			break;
+		
+		/* jobs */
+		case 5:
+			/* TODO */
+			break;
+
+		default:
+			return -1;
+	}
+	return 0;
+}
+
 void destroy_job(JOB** job)
 {
 	char*** iter;
@@ -73,7 +134,7 @@ JOB* create_job(const char* command)
 	error(job->cmd == NULL, (free(job->name), (free(job),(free(cleancmd),  NULL))));
 	
 	free(cleancmd);
-	return job;	
+	return job;
 }
 
 void destroy_pipes(int*** pipes, int n)
@@ -117,7 +178,15 @@ int** create_pipes(int n)
 
 pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int** pipes, int npipes)
 {
-	pid_t cpid = fork();
+	pid_t cpid;
+
+	if (cmd == NULL)
+		return -1;
+
+	if (get_builtin_cmd(cmd[0]))
+		return run_builtin_cmd(cmd);
+
+	cpid = fork();
 
 	error(cpid < 0, -1);
 	
@@ -225,6 +294,11 @@ int main()
 
 	while(1)
 	{
+		/*
+		getcwd(str, 1024*sizeof(char));
+		printf("@%s ", str);
+		*/
+
 		while(fgets(str, 1024, stdin), !strlen(str));
 
 		str[strlen(str)-1] = '\0';
