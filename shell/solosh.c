@@ -195,19 +195,20 @@ pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int** pipe
 		if (input_file != 0)
 		{
 			close(0);
-			dup(input_file);
+			error(dup(input_file) < 0, (exit(EXIT_FAILURE), -1));
 			close(input_file);
 		}
 		if (output_file != 1)
 		{
 			close(1);
 			close(2);
-			dup(output_file);
-			dup(output_file);
+			error(dup(output_file) < 0, (exit(EXIT_FAILURE), -1));
+			error(dup(output_file) < 0, (exit(EXIT_FAILURE), -1));
 			close(output_file);
 		}
 		destroy_pipes(&pipes, npipes);
 		execvp(cmd[0], cmd);
+		/* TODO: No such command error */
 		exit(EXIT_FAILURE);
 	}
 
@@ -294,12 +295,13 @@ int main()
 
 	while(1)
 	{
+		char* aux;
 		/*
 		getcwd(str, 1024*sizeof(char));
 		printf("@%s ", str);
 		*/
 
-		while(fgets(str, 1024, stdin), !strlen(str));
+		while(aux = fgets(str, 1024, stdin), !strlen(str) && aux != NULL);
 
 		str[strlen(str)-1] = '\0';
 		job = create_job(str);
