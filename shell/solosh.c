@@ -9,8 +9,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define INITIAL_JOB_LIST_CAPACITY 10
-
 /* JOB MANIPULATION */
 
 typedef struct job
@@ -19,6 +17,7 @@ typedef struct job
 	char*** cmd;
 	int inputfd, outputfd;
 	int blocking;
+	pid_t pid;
 }JOB;
 
 JOB* create_job(const char* command)
@@ -40,6 +39,7 @@ JOB* create_job(const char* command)
 	job->outputfd = get_io_redir_file(command, SLSH_OUTPUT);
 
 	job->blocking = is_blocking(command);
+	job->pid = 0;
 
 	cleancmd = clean_command(command);
 	error(cleancmd == NULL, (free(job->name), (free(job), NULL)));
@@ -82,41 +82,48 @@ void destroy_job(JOB** job)
 
 /* JOB LIST MANIPULATION */
 
+#define INITIAL_JOB_LIST_CAPACITY 10
+#define JL_GET 0
+#define JL_DESTROY 1
+
 typedef struct job_list
 {
 	JOB** v;
 	int jobcount, capacity, last;
 }JOB_LIST;
 
-
-JOB_LIST* create_job_list()
+JOB_LIST* job_list(int cmd)
 {
-	JOB_LIST* ret;
-	
-	ret = (JOB_LIST*) malloc(sizeof(JOB_LIST));
-	error(ret == NULL, NULL);
-
-	ret->jobcount = 0;
-	ret->capacity = INITIAL_JOB_LIST_CAPACITY;
-	ret->last = -1;
-	ret->v = (JOB**) malloc(sizeof(JOB*)*(ret->capacity));
-	error(ret->v == NULL, (free(ret), NULL));
-
-	return ret;
-}
-
-void destroy_job_list(JOB_LIST** list)
-{
+	static JOB_LIST* list = NULL;
 	int i;
-	if (list == NULL || *list == NULL)
-		return;
-	
-	for (i = 0; i <= (*list)->last; i++)
-		destroy_job(&((*list)->v[i]));
-	
-	free((*list)->v);
-	free(*list);
-	*list =  NULL;
+
+	switch(cmd)
+	{
+		default:
+		case JL_GET:
+			if (list != NULL)
+				return list;
+			list = (JOB_LIST*) malloc(sizeof(JOB_LIST));
+			error(list == NULL, NULL);
+
+			list->jobcount = 0;
+			list->capacity = INITIAL_JOB_LIST_CAPACITY;
+			list->last = -1;
+			list->v = (JOB**) malloc(sizeof(JOB*)*(list->capacity));
+			error(list->v == NULL, (free(list), NULL));
+			break;
+
+		case JL_DESTROY:
+			if (list == NULL)
+				return NULL;
+			for (i = 0; i <= list->last; i++)
+					destroy_job(&(list->v[i]));
+			free(list->v);
+			free(list);
+			list = NULL;
+			break;
+	}
+	return list;
 }
 
 int job_list_push(JOB_LIST* list, JOB* item)
@@ -143,12 +150,17 @@ int job_list_push(JOB_LIST* list, JOB* item)
 	return 0;
 }
 
-void job_list_erase(JOB_LIST* list, int idx)
+void job_list_erase(JOB_LIST* list, JOB* item)
 {
-	if (list == NULL)
+	int idx = 0;
+
+	if (list == NULL || item == NULL)
 		return;
 
-	if (idx < 0 || idx > list->last)
+	while (idx <= list->last && list->v[idx] != item)
+			idx++;
+
+	if (idx > list->last)
 		return;
 	
 	destroy_job(&(list->v[idx]));
@@ -205,7 +217,9 @@ int exit_flag = 0;
 
 int run_builtin_cmd(char* cmd[])
 {
-	int id;
+	int id, i;
+	JOB_LIST* list;
+
 	if (cmd == NULL)
 		return -1;
 	
@@ -236,7 +250,9 @@ int run_builtin_cmd(char* cmd[])
 		
 		/* jobs */
 		case 5:
-			/* TODO */
+			list = job_list(JL_GET);
+			for (i = 0; i <= list->last; i++)
+				printf("[%d] %s\n", i, list->v[i]->name);
 			break;
 
 		default:
@@ -291,6 +307,7 @@ int runjob(JOB* job)
 {
 	char*** it;
 	int ncmd = 0, i, **pipes = NULL;
+	pid_t lastpid = 0;
 
 	if (job == NULL || job->cmd == NULL)
 		return -1;
@@ -335,12 +352,17 @@ int runjob(JOB* job)
 			output = pipes[i][1];
 		
 		/*printf("runcmd(%s, %d, %d, %d)\n", job->cmd[i][0], input, output, block);*/
-		runcmd(job->cmd[i], input, output, block, pipes, ncmd-1);
+		lastpid = runcmd(job->cmd[i], input, output, block, pipes, ncmd-1);	
 	}
 
 	if (ncmd > 1)
 		destroy_pipes(&pipes, ncmd-1);
 	
+	if (job->blocking)
+		job_list_erase(job_list(JL_GET), job);
+	else
+		job->pid = lastpid;
+
 	return 0;
 }
 
@@ -348,7 +370,18 @@ int runjob(JOB* job)
 
 void sigchld_handler(int sig, siginfo_t* info, void* u)
 {
+	JOB_LIST* list;
+	int i;
+
 	waitpid(info->si_pid, NULL, 0);
+	
+	list = job_list(JL_GET);
+	if (list == NULL) return;
+	for (i = 0; i <= list->last; i++)
+	{
+		if (list->v[i] != NULL && list->v[i]->pid == info->si_pid)
+			job_list_erase(list, list->v[i]);
+	}
 	/*printf("%d ended.\n", info->si_pid);*/
 }
 
@@ -366,7 +399,7 @@ int main()
 	chld.sa_sigaction = sigchld_handler;
 	error(sigaction(SIGCHLD, &chld, NULL) < 0, -1);
 
-	list = create_job_list();
+	list = job_list(JL_GET);
 	error(list == NULL, -1);
 
 	while(!exit_flag)
@@ -377,7 +410,7 @@ int main()
 		printf("@%s ", str);
 		*/
 
-		while(aux = fgets(str, 1024, stdin), !strlen(str) && aux != NULL);
+		while(aux = fgets(str, 1024, stdin), !strlen(str) || aux == NULL);
 
 		str[strlen(str)-1] = '\0';
 		job = create_job(str);
@@ -396,6 +429,6 @@ int main()
 		str[0] = '\0';
 	}
 
-	destroy_job_list(&list);
+	job_list(JL_DESTROY);
 	return 0;
 }
