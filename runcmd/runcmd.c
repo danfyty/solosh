@@ -77,8 +77,8 @@ int runcmd(const char* command, int* result, const int* io)
 	/* Creating pipe used to detect exec failure. Forking.*/
 
 	sysfail(pipe(execfailpipe) < 0, -1);
-	fcntl(execfailpipe[0], F_SETFD, 1);
-	fcntl(execfailpipe[1], F_SETFD, 1);
+	fcntl(execfailpipe[0], F_SETFD, FD_CLOEXEC);
+	fcntl(execfailpipe[1], F_SETFD, FD_CLOEXEC);
 
 	cpid = fork();
 	sysfail(cpid < 0, -1);
