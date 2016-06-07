@@ -7,6 +7,24 @@
 
 #define INITIAL_TOKEN_ARRAY_CAP 10
 
+static const int nbcmd = 6;
+static const char* builtin_cmd[] = {"bg", "cd", "exit", "fg", "jobs", "quit"};
+
+int get_builtin_cmd(const char* cmd)
+{
+	int i;
+	
+	if (cmd == NULL)
+		return 0;
+	
+	for (i = 0; i < nbcmd; i++)
+	{
+		if (!strcmp(builtin_cmd[i], cmd))
+			return i+1;
+	}
+	return 0;
+}
+
 static int is_blank(char c)
 {
 	char blank[] = SLSH_BLANK_CHARS;

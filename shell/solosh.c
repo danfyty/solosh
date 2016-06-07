@@ -9,6 +9,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define INITIAL_JOB_LIST_CAPACITY 10
+
+/* JOB MANIPULATION */
+
 typedef struct job
 {
 	char* name;
@@ -17,65 +21,34 @@ typedef struct job
 	int blocking;
 }JOB;
 
-const int nbcmd = 6;
-const char* builtin_cmd[] = {"bg", "cd", "exit", "fg", "jobs", "quit"};
-
-int get_builtin_cmd(const char* cmd)
+JOB* create_job(const char* command)
 {
-	int i;
+	JOB* job = NULL;
+	char* cleancmd;
+
+	if (command == NULL)
+		return NULL;
+
+	job = (JOB*) malloc(sizeof(JOB));
+	error(job == NULL, NULL);
+
+	job->name = (char*) malloc(sizeof(char)*(strlen(command)+1));
+	error(job->name == NULL, (free(job), NULL));
+	strcpy(job->name, command);
+
+	job->inputfd = get_io_redir_file(command, SLSH_INPUT);
+	job->outputfd = get_io_redir_file(command, SLSH_OUTPUT);
+
+	job->blocking = is_blocking(command);
+
+	cleancmd = clean_command(command);
+	error(cleancmd == NULL, (free(job->name), (free(job), NULL)));
+
+	job->cmd = make_cmd_array(cleancmd);
+	error(job->cmd == NULL, (free(job->name), (free(job),(free(cleancmd),  NULL))));
 	
-	if (cmd == NULL)
-		return 0;
-	
-	for (i = 0; i < nbcmd; i++)
-	{
-		if (!strcmp(builtin_cmd[i], cmd))
-			return i+1;
-	}
-	return 0;
-}
-
-int run_builtin_cmd(char* cmd[])
-{
-	int id;
-
-	if (cmd == NULL)
-		return -1;
-	
-	id = get_builtin_cmd(cmd[0]);
-
-	switch(id)
-	{
-		/* bg */
-		case 1:
-			/* TODO*/
-			break;
-
-		/* cd */
-		case 2:
-			error(chdir(cmd[1]) < 0, -1);
-			break;
-
-		/* exit and quit */
-		case 3:
-		case 6:
-			exit(0);
-			break;
-
-		/* fg */
-		case 4:
-			/* TODO */
-			break;
-		
-		/* jobs */
-		case 5:
-			/* TODO */
-			break;
-
-		default:
-			return -1;
-	}
-	return 0;
+	free(cleancmd);
+	return job;
 }
 
 void destroy_job(JOB** job)
@@ -107,35 +80,85 @@ void destroy_job(JOB** job)
 	*job = NULL;
 }
 
-JOB* create_job(const char* command)
+/* JOB LIST MANIPULATION */
+
+typedef struct job_list
 {
-	JOB* job = NULL;
-	char* cleancmd;
+	JOB** v;
+	int jobcount, capacity, last;
+}JOB_LIST;
 
-	if (command == NULL)
-		return NULL;
 
-	job = (JOB*) malloc(sizeof(JOB));
-	error(job == NULL, NULL);
-
-	job->name = (char*) malloc(sizeof(char)*(strlen(command)+1));
-	error(job->name == NULL, (free(job), NULL));
-	strcpy(job->name, command);
-
-	job->inputfd = get_io_redir_file(command, SLSH_INPUT);
-	job->outputfd = get_io_redir_file(command, SLSH_OUTPUT);
-
-	job->blocking = is_blocking(command);
-
-	cleancmd = clean_command(command);
-	error(cleancmd == NULL, (free(job->name), (free(job), NULL)));
-
-	job->cmd = make_cmd_array(cleancmd);
-	error(job->cmd == NULL, (free(job->name), (free(job),(free(cleancmd),  NULL))));
+JOB_LIST* create_job_list()
+{
+	JOB_LIST* ret;
 	
-	free(cleancmd);
-	return job;
+	ret = (JOB_LIST*) malloc(sizeof(JOB_LIST));
+	error(ret == NULL, NULL);
+
+	ret->jobcount = 0;
+	ret->capacity = INITIAL_JOB_LIST_CAPACITY;
+	ret->last = -1;
+	ret->v = (JOB**) malloc(sizeof(JOB*)*(ret->capacity));
+	error(ret->v == NULL, (free(ret), NULL));
+
+	return ret;
 }
+
+void destroy_job_list(JOB_LIST** list)
+{
+	int i;
+	if (list == NULL || *list == NULL)
+		return;
+	
+	for (i = 0; i <= (*list)->last; i++)
+		destroy_job(&((*list)->v[i]));
+	
+	free((*list)->v);
+	free(*list);
+	*list =  NULL;
+}
+
+int job_list_push(JOB_LIST* list, JOB* item)
+{
+	int pos;
+
+	if (list == NULL || item == NULL)
+		return -1;
+	
+	pos = list->last + 1;
+	if (pos >= list->capacity)
+	{
+		JOB** newv;
+		
+		newv = (JOB**) realloc(list->v, sizeof(JOB*)*(2*list->capacity));
+		error(newv == NULL, -1);
+		list->v = newv;
+		list->capacity *= 2;
+	}
+
+	list->v[pos] = item;
+	list->last++;
+	list->jobcount++;
+	return 0;
+}
+
+void job_list_erase(JOB_LIST* list, int idx)
+{
+	if (list == NULL)
+		return;
+
+	if (idx < 0 || idx > list->last)
+		return;
+	
+	destroy_job(&(list->v[idx]));
+	list->jobcount--;
+
+	if (list->jobcount == 0)
+		list->last = -1;
+}
+
+/* PIPE MANIPULATION */
 
 void destroy_pipes(int*** pipes, int n)
 {
@@ -174,6 +197,52 @@ int** create_pipes(int n)
 		}
 	}
 	return pipes;
+}
+
+/* EXECUTION OF COMMANDS AND JOBS */
+
+int exit_flag = 0;
+
+int run_builtin_cmd(char* cmd[])
+{
+	int id;
+	if (cmd == NULL)
+		return -1;
+	
+	id = get_builtin_cmd(cmd[0]);
+
+	switch(id)
+	{
+		/* bg */
+		case 1:
+			/* TODO*/
+			break;
+
+		/* cd */
+		case 2:
+			error(chdir(cmd[1]) < 0, -1);
+			break;
+
+		/* exit and quit */
+		case 3:
+		case 6:
+			exit_flag = 1;
+			break;
+
+		/* fg */
+		case 4:
+			/* TODO */
+			break;
+		
+		/* jobs */
+		case 5:
+			/* TODO */
+			break;
+
+		default:
+			return -1;
+	}
+	return 0;
 }
 
 pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int** pipes, int npipes)
@@ -275,25 +344,32 @@ int runjob(JOB* job)
 	return 0;
 }
 
+/* SIGNAL HANDLERS */
+
 void sigchld_handler(int sig, siginfo_t* info, void* u)
 {
 	waitpid(info->si_pid, NULL, 0);
 	/*printf("%d ended.\n", info->si_pid);*/
 }
 
+/* MAIN PROGRAM */
+
 int main()
 {
 	char str[1024];
 	JOB* job = NULL;
 	struct sigaction chld;
+	JOB_LIST* list;
 
 	memset(&chld, 0, sizeof(struct sigaction));
 	chld.sa_flags |= SA_SIGINFO;
 	chld.sa_sigaction = sigchld_handler;
 	error(sigaction(SIGCHLD, &chld, NULL) < 0, -1);
 
+	list = create_job_list();
+	error(list == NULL, -1);
 
-	while(1)
+	while(!exit_flag)
 	{
 		char* aux;
 		/*
@@ -315,9 +391,11 @@ int main()
 		printf("job outputfd = %d\n", job->outputfd);
 		printf("job blocking = %d\n", job->blocking);
 */
+		job_list_push(list, job);
 		runjob(job);
-		destroy_job(&job);
 		str[0] = '\0';
 	}
+
+	destroy_job_list(&list);
 	return 0;
 }
