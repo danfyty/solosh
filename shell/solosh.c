@@ -9,21 +9,70 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* JOB MANIPULATION */
+/* ------- JOBS -------*/
 
 typedef struct job
 {
-	char* name;
-	char*** cmd;
-	int inputfd, outputfd;
-	int blocking;
-	pid_t pid;
+	char* name;				/* The job's name as it will be showed by the 'jobs' built-in command. */
+	char*** cmd;			/* The commands that make up the job. cmd[i][j] is the j+1-th argument of the i+1-th command and */
+	int ncmd;				/* the 1st argument is the commands name. */
+	int inputfd, outputfd;	/* Input and output file descriptors. */
+	int blocking;			/* Whether the job is blocking (name not ended by '&') or not. */
+	pid_t* pid;				/* Will hold the process IDs related to the job. */
+	int run_count;			/* Holds the number of running processes originated from the job */
 }JOB;
+
+JOB* create_job(const char* command);
+void destroy_job(JOB** job);
+
+
+/* ------- PIPES ------- */
+
+int** create_pipes(int n);
+void destroy_pipes(int*** pipes, int n);
+
+
+/* ------- JOB LIST ------- */
+
+#define INITIAL_JOB_LIST_CAPACITY 10
+
+#define JL_GET 0								/* Actions for the job_list method. */
+#define JL_DESTROY 1
+
+/* Additions to the list are done by run_job (below). Deletions from the list are done by run_job */
+/* (if the job is blocking) and by sigchld_handler (if the job is non-blocking). */
+
+typedef struct job_list
+{
+	JOB** v;
+	int jobcount, capacity, last;
+}JOB_LIST;
+
+JOB_LIST* job_list(int action);					/* The list is a singleton. This method is used for its creation, retrieval and destruction. */
+int job_list_push(JOB_LIST* list, JOB* job);
+void job_list_erase(JOB_LIST* list, const JOB* job);
+JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid);
+
+
+/* ------- RUN THINGS ------- */
+
+int exit_flag = 0;								/* Tells the main loop when to stop looping. Set by run_builtin_cmd. */
+int run_builtin_cmd(char* cmd[]);
+pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes); 	/* The pipes are needed because they must */
+int run_job(JOB* job);																	/* be destroyed in the child. */
+
+
+/* ------- SIGNAL HANDLERS ------- */
+
+void sigchld_handler(int sig, siginfo_t* info, void* u);
+
+
+/* ------- JOBS ------- */
 
 JOB* create_job(const char* command)
 {
 	JOB* job = NULL;
-	char* cleancmd;
+	char* cleancmd, ***iter;
 
 	if (command == NULL)
 		return NULL;
@@ -39,15 +88,28 @@ JOB* create_job(const char* command)
 	job->outputfd = get_io_redir_file(command, SLSH_OUTPUT);
 
 	job->blocking = is_blocking(command);
-	job->pid = 0;
 
 	cleancmd = clean_command(command);
-	error(cleancmd == NULL, (free(job->name), (free(job), NULL)));
+	error(cleancmd == NULL, (destroy_job(&job), NULL));
 
 	job->cmd = make_cmd_array(cleancmd);
-	error(job->cmd == NULL, (free(job->name), (free(job),(free(cleancmd),  NULL))));
-	
+	error(job->cmd == NULL, (destroy_job(&job), (free(cleancmd),  NULL)));
+
 	free(cleancmd);
+
+	job->ncmd = 0;
+	iter = job->cmd;
+	while (*iter != NULL)
+	{
+		job->ncmd++;
+		iter++;
+	}
+
+	job->run_count = 0;
+
+	job->pid = (pid_t*) calloc(job->ncmd, sizeof(pid_t));
+	error(job->pid == NULL, (destroy_job(&job), NULL));
+
 	return job;
 }
 
@@ -76,21 +138,55 @@ void destroy_job(JOB** job)
 	}
 	free((*job)->cmd);
 	free((*job)->name);
+	free((*job)->pid);
 	free(*job);
 	*job = NULL;
 }
 
-/* JOB LIST MANIPULATION */
 
-#define INITIAL_JOB_LIST_CAPACITY 10
-#define JL_GET 0
-#define JL_DESTROY 1
+/* ------- PIPES ------- */
 
-typedef struct job_list
+int** create_pipes(int n)
 {
-	JOB** v;
-	int jobcount, capacity, last;
-}JOB_LIST;
+	int** pipes = (int**) malloc(sizeof(int*)*n), i;
+	error(pipes == NULL, NULL);
+
+	for (i = 0; i < n; i++)
+	{
+		pipes[i] = (int*) malloc(sizeof(int)*2);
+		if (pipes[i] == NULL || pipe(pipes[i]) < 0)
+		{
+			destroy_pipes(&pipes, n);
+			error(1, NULL);
+		}
+	}
+	return pipes;
+}
+
+void destroy_pipes(int*** pipes, int n)
+{
+	int i, **p;
+
+	if (pipes == NULL)
+		return;
+
+	p = *pipes;
+
+	for (i = 0; i < n; i++)
+	{
+		if (p[i] != NULL)
+		{
+			close(p[i][0]);
+			close(p[i][1]);
+		}
+		free(p[i]);
+	}
+	free(p);
+	*pipes = NULL;
+}
+
+
+/* ------- JOB LIST ------- */
 
 JOB_LIST* job_list(int cmd)
 {
@@ -150,7 +246,7 @@ int job_list_push(JOB_LIST* list, JOB* item)
 	return 0;
 }
 
-void job_list_erase(JOB_LIST* list, JOB* item)
+void job_list_erase(JOB_LIST* list, const JOB* item)
 {
 	int idx = 0;
 
@@ -163,59 +259,37 @@ void job_list_erase(JOB_LIST* list, JOB* item)
 	if (idx > list->last)
 		return;
 	
-	destroy_job(&(list->v[idx]));
+	list->v[idx] = NULL;
 	list->jobcount--;
-
 	if (list->jobcount == 0)
 		list->last = -1;
 }
 
-/* PIPE MANIPULATION */
-
-void destroy_pipes(int*** pipes, int n)
+JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid)
 {
-	int i, **p;
+	int idx, i;
 
-	if (pipes == NULL)
-		return;
+	if (list == NULL)
+		return NULL;
 
-	p = *pipes;
-
-	for (i = 0; i < n; i++)
+	for (idx = 0; idx <= list->last; idx++)
 	{
-		if (p[i] != NULL)
+		JOB* job = list->v[idx];
+		if (job != NULL)
 		{
-			close(p[i][0]);
-			close(p[i][1]);
-		}
-		free(p[i]);
-	}
-	free(p);
-	*pipes = NULL;
-}
-
-int** create_pipes(int n)
-{
-	int** pipes = (int**) malloc(sizeof(int*)*n), i;
-	error(pipes == NULL, NULL);
-
-	for (i = 0; i < n; i++)
-	{
-		pipes[i] = (int*) malloc(sizeof(int)*2);
-		if (pipes[i] == NULL || pipe(pipes[i]) < 0)
-		{
-			destroy_pipes(&pipes, n);
-			error(1, NULL);
+			for (i = 0; i < job->ncmd; i++)
+			{
+				if (job->pid[i] == pid)
+					return job;
+			}
 		}
 	}
-	return pipes;
+	return NULL;
 }
 
-/* EXECUTION OF COMMANDS AND JOBS */
+/* ------- RUN THINGS -------  */
 
-int exit_flag = 0;
-
-int run_builtin_cmd(char* cmd[])
+int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes */
 {
 	int id, i;
 	JOB_LIST* list;
@@ -261,7 +335,7 @@ int run_builtin_cmd(char* cmd[])
 	return 0;
 }
 
-pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int** pipes, int npipes)
+pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes)
 {
 	pid_t cpid;
 
@@ -296,39 +370,34 @@ pid_t runcmd(char* cmd[], int input_file, int output_file, int block, int** pipe
 		/* TODO: No such command error */
 		exit(EXIT_FAILURE);
 	}
-
-	if (block)
-		waitpid(cpid, NULL, 0);
 	return cpid;
 }
 
 
-int runjob(JOB* job)
+int run_job(JOB* job)
 {
-	char*** it;
-	int ncmd = 0, i, **pipes = NULL;
-	pid_t lastpid = 0;
+	int i, **pipes = NULL;
+	JOB_LIST* list;
 
 	if (job == NULL || job->cmd == NULL)
 		return -1;
 
-	it = job->cmd;
-	while (*it != NULL)
-	{
-		ncmd++;
-		it++;
-	}
+	list = job_list(JL_GET);
+	error(list == NULL, -1);
 
-	if (ncmd > 1)
+	if (job->ncmd > 1)
 	{
-		pipes = create_pipes(ncmd-1);
+		pipes = create_pipes(job->ncmd-1);
 		if (pipes == NULL)
 			return -1;
 	}
 
-	for (i = 0; i < ncmd; i++)
+	job->run_count = job->ncmd;
+	job_list_push(list, job);
+
+	for (i = 0; i < job->ncmd; i++)
 	{
-		int input, output, block = 0;
+		int input, output;
 		
 		if (i == 0)
 		{
@@ -340,49 +409,69 @@ int runjob(JOB* job)
 		else
 			input = pipes[i-1][0];
 
-		if (i == ncmd-1)
+		if (i == job->ncmd-1)
 		{
 			if (job->outputfd != -1)
 				output = job->outputfd;
 			else
 				output = 1;
-			block = job->blocking;
 		}
 		else
 			output = pipes[i][1];
 		
-		/*printf("runcmd(%s, %d, %d, %d)\n", job->cmd[i][0], input, output, block);*/
-		lastpid = runcmd(job->cmd[i], input, output, block, pipes, ncmd-1);	
+		job->pid[i] = run_cmd(job->cmd[i], input, output, pipes, job->ncmd-1);
+		if (job->pid[i] <= 0)
+			job->run_count--;		/* Built-in commands and failed exections are not running processes */
 	}
-
-	if (ncmd > 1)
-		destroy_pipes(&pipes, ncmd-1);
 	
-	if (job->blocking)
-		job_list_erase(job_list(JL_GET), job);
-	else
-		job->pid = lastpid;
+	destroy_pipes(&pipes, job->ncmd-1);
 
+	if (job->blocking)
+	{
+		for (i = 0; i < job->ncmd; i++)
+		{
+			if (job->pid[i] >= 0)
+				waitpid(job->pid[i], NULL, 0);
+		}
+		job_list_erase(list, job);
+		destroy_job(&job);
+	}	
 	return 0;
 }
 
-/* SIGNAL HANDLERS */
+/* ------- SIGNAL HANDLERS -------*/
 
 void sigchld_handler(int sig, siginfo_t* info, void* u)
 {
 	JOB_LIST* list;
-	int i;
-
-	waitpid(info->si_pid, NULL, 0);
+	JOB* job;
 	
 	list = job_list(JL_GET);
-	if (list == NULL) return;
-	for (i = 0; i <= list->last; i++)
+	if (list == NULL)
+		return;
+	
+	job = job_list_find_by_pid(list, info->si_pid);
+	if (job == NULL)
+		return;
+
+	switch(info->si_code)
 	{
-		if (list->v[i] != NULL && list->v[i]->pid == info->si_pid)
-			job_list_erase(list, list->v[i]);
+		case CLD_EXITED:
+			if (!job->blocking)		/* This handler only handles non-blocking jobs. */
+			{
+				waitpid(info->si_pid, NULL, 0);
+				if (--job->run_count == 0)
+				{
+					job_list_erase(list, job);
+					destroy_job(&job);
+				}
+				
+			}
+			break;
+
+		default:
+			break;
 	}
-	/*printf("%d ended.\n", info->si_pid);*/
 }
 
 /* MAIN PROGRAM */
@@ -392,15 +481,11 @@ int main()
 	char str[1024];
 	JOB* job = NULL;
 	struct sigaction chld;
-	JOB_LIST* list;
 
 	memset(&chld, 0, sizeof(struct sigaction));
 	chld.sa_flags |= SA_SIGINFO;
 	chld.sa_sigaction = sigchld_handler;
 	error(sigaction(SIGCHLD, &chld, NULL) < 0, -1);
-
-	list = job_list(JL_GET);
-	error(list == NULL, -1);
 
 	while(!exit_flag)
 	{
@@ -424,8 +509,7 @@ int main()
 		printf("job outputfd = %d\n", job->outputfd);
 		printf("job blocking = %d\n", job->blocking);
 */
-		job_list_push(list, job);
-		runjob(job);
+		run_job(job);
 		str[0] = '\0';
 	}
 
