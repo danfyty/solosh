@@ -19,6 +19,7 @@ typedef struct job
 	int inputfd, outputfd;	/* Input and output file descriptors. */
 	int blocking;			/* Whether the job is blocking (name not ended by '&') or not. */
 	pid_t* pid;				/* Will hold the process IDs related to the job. */
+	pid_t pgid;				/* Will hold the process group ID of the processes related to the job */
 	int run_count;			/* Holds the number of running processes originated from the job */
 }JOB;
 
@@ -52,20 +53,21 @@ JOB_LIST* job_list(int action);					/* The list is a singleton. This method is u
 int job_list_push(JOB_LIST* list, JOB* job);
 void job_list_erase(JOB_LIST* list, const JOB* job);
 JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid);
+JOB* job_list_find_foreground(JOB_LIST* list);
 
 
 /* ------- RUN THINGS ------- */
 
 int exit_flag = 0;								/* Tells the main loop when to stop looping. Set by run_builtin_cmd. */
 int run_builtin_cmd(char* cmd[]);
-pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes); 	/* The pipes are needed because they must */
-int run_job(JOB* job);																	/* be destroyed in the child. */
+pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes, pid_t session); 	/* The pipes are needed because they must */
+int run_job(JOB* job);																					/* be destroyed in the child. */
 
 
 /* ------- SIGNAL HANDLERS ------- */
 
-void sigchld_handler(int sig, siginfo_t* info, void* u);
-
+void sigchld_handler(int sig, siginfo_t* info, void* u);	/* Handles SIGCHLD for non-blocking jobs */
+void fg_handler(int sig, siginfo_t* info, void* u);			/* Handles SIGINT and SIGTSTP for blocking jobs */
 
 /* ------- JOBS ------- */
 
@@ -106,6 +108,8 @@ JOB* create_job(const char* command)
 	}
 
 	job->run_count = 0;
+	
+	job->pgid = 0;
 
 	job->pid = (pid_t*) calloc(job->ncmd, sizeof(pid_t));
 	error(job->pid == NULL, (destroy_job(&job), NULL));
@@ -287,9 +291,25 @@ JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid)
 	return NULL;
 }
 
+JOB* job_list_find_foreground(JOB_LIST* list)
+{
+	int idx;
+
+	if (list == NULL)
+		return NULL;
+
+	for (idx = 0; idx <= list->last; idx++)
+	{
+		JOB* job = list->v[idx];
+		if (job != NULL && job->blocking)
+			return job;
+	}
+	return NULL;
+}
+
 /* ------- RUN THINGS -------  */
 
-int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes */
+int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes (io redirection?) */
 {
 	int id, i;
 	JOB_LIST* list;
@@ -335,7 +355,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 	return 0;
 }
 
-pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes)
+pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes, pid_t pgid)
 {
 	pid_t cpid;
 
@@ -351,6 +371,8 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 	
 	if (cpid == 0)
 	{
+		error(setpgid(0, pgid) < 0, (exit(EXIT_FAILURE), -1));	/* pgid == 0 -> new group with id equal to the current pid */
+
 		if (input_file != 0)
 		{
 			close(0);
@@ -419,9 +441,11 @@ int run_job(JOB* job)
 		else
 			output = pipes[i][1];
 		
-		job->pid[i] = run_cmd(job->cmd[i], input, output, pipes, job->ncmd-1);
+		job->pid[i] = run_cmd(job->cmd[i], input, output, pipes, job->ncmd-1, job->pgid);
 		if (job->pid[i] <= 0)
-			job->run_count--;		/* Built-in commands and failed exections are not running processes */
+			job->run_count--;		/* Built-in commands and failed executions are not running processes */
+		else if (job->pgid == 0)
+			job->pgid = job->pid[i];		
 	}
 	
 	destroy_pipes(&pipes, job->ncmd-1);
@@ -430,11 +454,11 @@ int run_job(JOB* job)
 	{
 		for (i = 0; i < job->ncmd; i++)
 		{
-			if (job->pid[i] >= 0)
-				waitpid(job->pid[i], NULL, 0);
-		}
-		job_list_erase(list, job);
-		destroy_job(&job);
+			if (job->pid[i] > 0)
+				while(waitpid(job->pid[i], NULL, 0) < 0);	/* The while is needed because if the child is killed then the wait will be canceled */
+		}													/* (returning -1) by the call to fg_handler. It must be resumed, otherwise zombies  */
+		job_list_erase(list, job);							/* processes would remain: fg_handler doesn't call wait and sigchld_handler won't) */
+		destroy_job(&job);									/* wait for blocking processes. */
 	}	
 	return 0;
 }
@@ -445,19 +469,19 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 {
 	JOB_LIST* list;
 	JOB* job;
-	
+
 	list = job_list(JL_GET);
 	if (list == NULL)
 		return;
 	
 	job = job_list_find_by_pid(list, info->si_pid);
-	if (job == NULL)
+	if (job == NULL || job->blocking)	/* This handler only handles non-blocking jobs */
 		return;
 
 	switch(info->si_code)
 	{
 		case CLD_EXITED:
-			if (!job->blocking)		/* This handler only handles non-blocking jobs. */
+			if (!job->blocking)	
 			{
 				waitpid(info->si_pid, NULL, 0);
 				if (--job->run_count == 0)
@@ -469,10 +493,30 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 			}
 			break;
 
+		case CLD_KILLED:
+			waitpid(info->si_pid, NULL, 0);
+			break;
+
 		default:
 			break;
 	}
 }
+
+void fg_handler(int sig, siginfo_t* info, void* u)
+{
+	JOB_LIST* list;
+	JOB* job;
+
+	list = job_list(JL_GET);
+	if (list == NULL)
+		return;
+
+	job = job_list_find_foreground(list);
+	if (job == NULL)
+		return;
+	
+	kill(-job->pgid, sig);
+}	
 
 /* MAIN PROGRAM */
 
@@ -480,13 +524,21 @@ int main()
 {
 	char str[1024];
 	JOB* job = NULL;
-	struct sigaction chld;
+	struct sigaction chld, fg;
+
+	setpgid(0, 0);
 
 	memset(&chld, 0, sizeof(struct sigaction));
 	chld.sa_flags |= SA_SIGINFO;
 	chld.sa_sigaction = sigchld_handler;
 	error(sigaction(SIGCHLD, &chld, NULL) < 0, -1);
 
+	memset(&fg, 0, sizeof(struct sigaction));
+	fg.sa_flags |= SA_SIGINFO;
+	fg.sa_sigaction = fg_handler;
+	error(sigaction(SIGINT, &fg, NULL) < 0, -1);
+	error(sigaction(SIGTSTP, &fg, NULL) < 0, -1); 	/* TODO: regain control when foreground child is suspended (stop waitpid @ run_job).*/
+													/* Also implement fg and bg. */
 	while(!exit_flag)
 	{
 		char* aux;
@@ -499,16 +551,7 @@ int main()
 
 		str[strlen(str)-1] = '\0';
 		job = create_job(str);
-/*
-		printf("job name: %s\n", job->name);
-		
-		printf("job commands:\n");
-		print_job_cmd(job->cmd);
 
-		printf("job inputfd = %d\n", job->inputfd);
-		printf("job outputfd = %d\n", job->outputfd);
-		printf("job blocking = %d\n", job->blocking);
-*/
 		run_job(job);
 		str[0] = '\0';
 	}
