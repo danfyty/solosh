@@ -52,11 +52,11 @@ typedef struct job_list
 }JOB_LIST;
 
 JOB_LIST* job_list(int action);					/* The list is a singleton. This method is used for its creation, retrieval and destruction. */
-int job_list_push(JOB_LIST* list, JOB* job);
-void job_list_erase(JOB_LIST* list, const JOB* job);
-JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid);
-JOB* job_list_find_foreground(JOB_LIST* list);
-int job_list_find_lastmodified_id(JOB_LIST* list);
+int job_list_push(JOB* job);
+void job_list_erase(const JOB* job);
+JOB* job_list_find_by_pid(pid_t pid);
+JOB* job_list_find_foreground();
+int job_list_find_lastmodified_id();
 
 /* ------- RUN THINGS ------- */
 
@@ -71,6 +71,8 @@ int run_job(JOB* job);																					/* be destroyed in the child. */
 
 void sigchld_handler(int sig, siginfo_t* info, void* u);	/* Handles SIGCHLD for non-blocking jobs */
 void fg_handler(int sig, siginfo_t* info, void* u);			/* Handles SIGINT and SIGTSTP for blocking jobs */
+
+
 
 /* ------- JOBS ------- */
 
@@ -229,10 +231,11 @@ JOB_LIST* job_list(int cmd)
 	return list;
 }
 
-int job_list_push(JOB_LIST* list, JOB* item)
+int job_list_push(JOB* item)
 {
 	int pos;
-
+	JOB_LIST* list = job_list(JL_GET);
+	
 	if (list == NULL || item == NULL)
 		return -1;
 	
@@ -253,10 +256,11 @@ int job_list_push(JOB_LIST* list, JOB* item)
 	return 0;
 }
 
-void job_list_erase(JOB_LIST* list, const JOB* item)
+void job_list_erase(const JOB* item)
 {
 	int idx = 0;
-
+	JOB_LIST* list = job_list(JL_GET);
+	
 	if (list == NULL || item == NULL)
 		return;
 
@@ -272,10 +276,11 @@ void job_list_erase(JOB_LIST* list, const JOB* item)
 		list->last = -1;
 }
 
-JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid)
+JOB* job_list_find_by_pid(pid_t pid)
 {
 	int idx, i;
-
+	JOB_LIST* list = job_list(JL_GET);
+	
 	if (list == NULL)
 		return NULL;
 
@@ -294,10 +299,11 @@ JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid)
 	return NULL;
 }
 
-JOB* job_list_find_foreground(JOB_LIST* list)
+JOB* job_list_find_foreground()
 {
 	int idx;
-
+	JOB_LIST* list = job_list(JL_GET);
+	
 	if (list == NULL)
 		return NULL;
 
@@ -310,10 +316,11 @@ JOB* job_list_find_foreground(JOB_LIST* list)
 	return NULL;
 }
 
-int job_list_find_lastmodified_id(JOB_LIST* list)
+int job_list_find_lastmodified_id()
 {
 	int idx, ret = -1;
 	time_t last = -1;
+	JOB_LIST* list = job_list(JL_GET);
 
 	if (list == NULL)
 		return -1;
@@ -352,7 +359,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 			if (cmd[1] != NULL)
 				jobid = atoi(cmd[1]);
 			else
-				jobid = job_list_find_lastmodified_id(list);
+				jobid = job_list_find_lastmodified_id();
 
 			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
 			{
@@ -383,7 +390,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 			if (cmd[1] != NULL)
 				jobid = atoi(cmd[1]);
 			else
-				jobid = job_list_find_lastmodified_id(list);
+				jobid = job_list_find_lastmodified_id();
 
 			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
 			{
@@ -449,7 +456,7 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 void fg_wait(JOB* job)
 {
 	int i;
-	JOB_LIST* list = job_list(JL_GET);
+	
 	for (i = 0; i < job->ncmd && job->blocking; i++)
 	{
 		if (job->pid[i] > 0)
@@ -466,7 +473,7 @@ void fg_wait(JOB* job)
 
 	if (job->blocking)		/* Blocking job has terminated */
 	{
-		job_list_erase(list, job);
+		job_list_erase(job);
 		destroy_job(&job);
 	}
 }
@@ -475,13 +482,9 @@ void fg_wait(JOB* job)
 int run_job(JOB* job)
 {
 	int i, **pipes = NULL;
-	JOB_LIST* list;
 
 	if (job == NULL || job->cmd == NULL)
 		return -1;
-
-	list = job_list(JL_GET);
-	error(list == NULL, -1);
 
 	if (job->ncmd > 1)
 	{
@@ -491,7 +494,7 @@ int run_job(JOB* job)
 	}
 
 	job->run_count = job->ncmd;
-	job_list_push(list, job);
+	job_list_push(job);
 
 	for (i = 0; i < job->ncmd; i++)
 	{
@@ -536,14 +539,9 @@ int run_job(JOB* job)
 
 void sigchld_handler(int sig, siginfo_t* info, void* u)
 {
-	JOB_LIST* list;
 	JOB* job;
 
-	list = job_list(JL_GET);
-	if (list == NULL)
-		return;
-	
-	job = job_list_find_by_pid(list, info->si_pid);
+	job = job_list_find_by_pid(info->si_pid);
 	if (job == NULL || job->blocking)	/* This handler only handles non-blocking jobs */
 		return;
 
@@ -555,7 +553,7 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 				waitpid(info->si_pid, NULL, 0);
 				if (--job->run_count == 0)
 				{
-					job_list_erase(list, job);
+					job_list_erase(job);
 					destroy_job(&job);
 				}
 				
@@ -573,14 +571,9 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 
 void fg_handler(int sig, siginfo_t* info, void* u)
 {
-	JOB_LIST* list;
 	JOB* job;
 
-	list = job_list(JL_GET);
-	if (list == NULL)
-		return;
-
-	job = job_list_find_foreground(list);
+	job = job_list_find_foreground();
 	if (job == NULL)
 		return;
 	
