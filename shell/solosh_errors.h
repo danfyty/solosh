@@ -20,7 +20,7 @@
 		if (expr)\
 		{\
 			printf("Fatal error: %s\n", strerror(errno));\
-			exit(status)\
+			exit(status);\
 		}\
 	} while (0)
 

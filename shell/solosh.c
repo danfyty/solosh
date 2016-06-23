@@ -60,6 +60,7 @@ JOB* job_list_find_foreground(JOB_LIST* list);
 
 int exit_flag = 0;								/* Tells the main loop when to stop looping. Set by run_builtin_cmd. */
 int run_builtin_cmd(char* cmd[]);
+void fg_wait(JOB* job);							/* This function does the waiting when there's a job on foreground */
 pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes, pid_t session); 	/* The pipes are needed because they must */
 int run_job(JOB* job);																					/* be destroyed in the child. */
 
@@ -311,7 +312,7 @@ JOB* job_list_find_foreground(JOB_LIST* list)
 
 int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes (io redirection?) */
 {
-	int id, i;
+	int id, i, jobid;
 	JOB_LIST* list;
 
 	if (cmd == NULL)
@@ -323,7 +324,14 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 	{
 		/* bg */
 		case 1:
-			/* TODO*/
+			list = job_list(JL_GET);
+			if (cmd[1] != NULL)
+				jobid = atoi(cmd[1]);
+			else
+				jobid = -1;		/* TODO: make jobid default to last job whose status was modified */
+
+			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
+				kill(-list->v[jobid]->pgid, SIGCONT);
 			break;
 
 		/* cd */
@@ -339,14 +347,26 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 
 		/* fg */
 		case 4:
-			/* TODO */
+			list = job_list(JL_GET);
+			if (cmd[1] != NULL)
+				jobid = atoi(cmd[1]);
+			else
+				jobid = -1; /*TODO: same as line 331 */
+
+			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
+			{
+				kill(-list->v[jobid]->pgid, SIGCONT);
+				list->v[jobid]->blocking = 1;
+				fg_wait(list->v[jobid]);
+			}
 			break;
 		
 		/* jobs */
 		case 5:
 			list = job_list(JL_GET);
 			for (i = 0; i <= list->last; i++)
-				printf("[%d] %s\n", i, list->v[i]->name);
+				if (list->v[i] != NULL)
+					printf("[%d] %s\n", i, list->v[i]->name);
 			break;
 
 		default:
@@ -371,20 +391,20 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 	
 	if (cpid == 0)
 	{
-		error(setpgid(0, pgid) < 0, (exit(EXIT_FAILURE), -1));	/* pgid == 0 -> new group with id equal to the current pid */
+		fatal_error(setpgid(0, pgid) < 0, -1);	/* pgid == 0 -> new group with id equal to the current pid */
 
 		if (input_file != 0)
 		{
 			close(0);
-			error(dup(input_file) < 0, (exit(EXIT_FAILURE), -1));
+			fatal_error(dup(input_file) < 0, -1);
 			close(input_file);
 		}
 		if (output_file != 1)
 		{
 			close(1);
 			close(2);
-			error(dup(output_file) < 0, (exit(EXIT_FAILURE), -1));
-			error(dup(output_file) < 0, (exit(EXIT_FAILURE), -1));
+			fatal_error(dup(output_file) < 0, -1);
+			fatal_error(dup(output_file) < 0, -1);
 			close(output_file);
 		}
 		destroy_pipes(&pipes, npipes);
@@ -393,6 +413,31 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 		exit(EXIT_FAILURE);
 	}
 	return cpid;
+}
+
+void fg_wait(JOB* job)
+{
+	int i;
+	JOB_LIST* list = job_list(JL_GET);
+	for (i = 0; i < job->ncmd && job->blocking; i++)
+	{
+		if (job->pid[i] > 0)
+		{
+			while (waitpid(job->pid[i], NULL, 0) < 0 && job->blocking); 
+			/* A suspended job stops being blocking (fg_handler sets job->blocking to 0) 				*/
+			/* The while loop is needed because if the child is killed then the wait will be canceled 	*/
+			/* (returning -1) by the call to fg_handler. It must be called again, otherwise zombie  	*/
+			/* processes would remain: fg_handler doesn't call wait and sigchld_handler doesn't wait) 	*/
+			/* for blocking jobs */
+
+		}
+	}
+
+	if (job->blocking)		/* Blocking job has terminated */
+	{
+		job_list_erase(list, job);
+		destroy_job(&job);
+	}
 }
 
 
@@ -451,15 +496,8 @@ int run_job(JOB* job)
 	destroy_pipes(&pipes, job->ncmd-1);
 
 	if (job->blocking)
-	{
-		for (i = 0; i < job->ncmd; i++)
-		{
-			if (job->pid[i] > 0)
-				while(waitpid(job->pid[i], NULL, 0) < 0);	/* The while is needed because if the child is killed then the wait will be canceled */
-		}													/* (returning -1) by the call to fg_handler. It must be resumed, otherwise zombies  */
-		job_list_erase(list, job);							/* processes would remain: fg_handler doesn't call wait and sigchld_handler won't) */
-		destroy_job(&job);									/* wait for blocking processes. */
-	}	
+		fg_wait(job);
+	
 	return 0;
 }
 
@@ -516,7 +554,10 @@ void fg_handler(int sig, siginfo_t* info, void* u)
 		return;
 	
 	kill(-job->pgid, sig);
-}	
+
+	if (sig == SIGTSTP)
+		job->blocking = 0;
+}
 
 /* MAIN PROGRAM */
 
@@ -537,8 +578,8 @@ int main()
 	fg.sa_flags |= SA_SIGINFO;
 	fg.sa_sigaction = fg_handler;
 	error(sigaction(SIGINT, &fg, NULL) < 0, -1);
-	error(sigaction(SIGTSTP, &fg, NULL) < 0, -1); 	/* TODO: regain control when foreground child is suspended (stop waitpid @ run_job).*/
-													/* Also implement fg and bg. */
+	error(sigaction(SIGTSTP, &fg, NULL) < 0, -1); 	/* TODO: implement fg and bg*/
+
 	while(!exit_flag)
 	{
 		char* aux;
