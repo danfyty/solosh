@@ -402,8 +402,6 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 		if (output_file != 1)
 		{
 			close(1);
-			close(2);
-			fatal_error(dup(output_file) < 0, -1);
 			fatal_error(dup(output_file) < 0, -1);
 			close(output_file);
 		}
