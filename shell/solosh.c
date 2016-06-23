@@ -314,6 +314,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 {
 	int id, i, jobid;
 	JOB_LIST* list;
+	char* path = NULL;
 
 	if (cmd == NULL)
 		return -1;
@@ -337,6 +338,10 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 		/* cd */
 		case 2:
 			error(chdir(cmd[1]) < 0, -1);
+			path = get_current_dir_name();
+			error(path == NULL, -1);
+			error(setenv("PWD", path, 1) < 0, (free(path), -1));
+			free(path);
 			break;
 
 		/* exit and quit */
@@ -576,7 +581,7 @@ int main()
 	fg.sa_flags |= SA_SIGINFO;
 	fg.sa_sigaction = fg_handler;
 	error(sigaction(SIGINT, &fg, NULL) < 0, -1);
-	error(sigaction(SIGTSTP, &fg, NULL) < 0, -1); 	/* TODO: implement fg and bg*/
+	error(sigaction(SIGTSTP, &fg, NULL) < 0, -1); 
 
 	while(!exit_flag)
 	{
@@ -586,7 +591,7 @@ int main()
 		printf("@%s ", str);
 		*/
 
-		while(aux = fgets(str, 1024, stdin), !strlen(str) || aux == NULL);
+		while(aux = fgets(str, 1024, stdin), !strlen(str) || aux == NULL);	/* TODO: not use static buffer ? */
 
 		str[strlen(str)-1] = '\0';
 		job = create_job(str);

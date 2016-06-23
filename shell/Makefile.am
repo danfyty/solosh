@@ -20,6 +20,6 @@
 bin_PROGRAMS = solosh
 
 solosh_SOURCES = solosh.c solosh_parser.c
-solosh_CPPFLAGS = -Wall -Werror --ansi --pedantic-errors -D_POSIX_C_SOURCE=200809L -I.
+solosh_CPPFLAGS = -Wall -Werror --ansi --pedantic-errors -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -I.
 
 include_HEADERS = solosh_parser.h
