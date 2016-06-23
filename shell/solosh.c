@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 /* ------- JOBS -------*/
@@ -21,6 +22,7 @@ typedef struct job
 	pid_t* pid;				/* Will hold the process IDs related to the job. */
 	pid_t pgid;				/* Will hold the process group ID of the processes related to the job */
 	int run_count;			/* Holds the number of running processes originated from the job */
+	time_t lastmodified;		/* Used by bg and fg when executed with no argument */
 }JOB;
 
 JOB* create_job(const char* command);
@@ -54,7 +56,7 @@ int job_list_push(JOB_LIST* list, JOB* job);
 void job_list_erase(JOB_LIST* list, const JOB* job);
 JOB* job_list_find_by_pid(JOB_LIST* list, pid_t pid);
 JOB* job_list_find_foreground(JOB_LIST* list);
-
+int job_list_find_lastmodified_id(JOB_LIST* list);
 
 /* ------- RUN THINGS ------- */
 
@@ -96,9 +98,8 @@ JOB* create_job(const char* command)
 	error(cleancmd == NULL, (destroy_job(&job), NULL));
 
 	job->cmd = make_cmd_array(cleancmd);
-	error(job->cmd == NULL, (destroy_job(&job), (free(cleancmd),  NULL)));
-
 	free(cleancmd);
+	error(job->cmd == NULL, (destroy_job(&job), NULL));
 
 	job->ncmd = 0;
 	iter = job->cmd;
@@ -115,6 +116,7 @@ JOB* create_job(const char* command)
 	job->pid = (pid_t*) calloc(job->ncmd, sizeof(pid_t));
 	error(job->pid == NULL, (destroy_job(&job), NULL));
 
+	job->lastmodified = -1;
 	return job;
 }
 
@@ -308,6 +310,26 @@ JOB* job_list_find_foreground(JOB_LIST* list)
 	return NULL;
 }
 
+int job_list_find_lastmodified_id(JOB_LIST* list)
+{
+	int idx, ret = -1;
+	time_t last = -1;
+
+	if (list == NULL)
+		return -1;
+
+	for (idx = 0; idx <= list->last; idx++)
+	{
+		JOB* job = list->v[idx];
+		if (job != NULL && job->lastmodified > last)
+		{
+			ret = idx;
+			last = job->lastmodified;
+		}	
+	}
+	return ret;
+}
+
 /* ------- RUN THINGS -------  */
 
 int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes (io redirection?) */
@@ -326,13 +348,17 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 		/* bg */
 		case 1:
 			list = job_list(JL_GET);
+			
 			if (cmd[1] != NULL)
 				jobid = atoi(cmd[1]);
 			else
-				jobid = -1;		/* TODO: make jobid default to last job whose status was modified */
+				jobid = job_list_find_lastmodified_id(list);
 
 			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
+			{
+				list->v[jobid]->lastmodified = time(NULL);
 				kill(-list->v[jobid]->pgid, SIGCONT);
+			}
 			break;
 
 		/* cd */
@@ -353,13 +379,15 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 		/* fg */
 		case 4:
 			list = job_list(JL_GET);
+			
 			if (cmd[1] != NULL)
 				jobid = atoi(cmd[1]);
 			else
-				jobid = -1; /*TODO: same as line 331 */
+				jobid = job_list_find_lastmodified_id(list);
 
 			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
 			{
+				list->v[jobid]->lastmodified = time(NULL);
 				kill(-list->v[jobid]->pgid, SIGCONT);
 				list->v[jobid]->blocking = 1;
 				fg_wait(list->v[jobid]);
@@ -557,6 +585,7 @@ void fg_handler(int sig, siginfo_t* info, void* u)
 		return;
 	
 	kill(-job->pgid, sig);
+	job->lastmodified = time(NULL);
 
 	if (sig == SIGTSTP)
 		job->blocking = 0;
