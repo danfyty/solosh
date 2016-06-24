@@ -62,13 +62,11 @@ int job_list_find_lastmodified_id();
 
 int exit_flag = 0;								/* Tells the main loop when to stop looping. Set by run_builtin_cmd. */
 int run_builtin_cmd(char* cmd[]);
-void fg_wait(JOB* job);							/* This function does the waiting when there's a job on foreground */
 pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npipes, pid_t session); 	/* The pipes are needed because they must */
 int run_job(JOB* job);																					/* be destroyed in the child. */
 
-
-/* ------- SIGNAL HANDLERS ------- */
-
+/* ------- MANAGE RUNNING THINGS ------- */
+void fg_wait(JOB* job);										/* This function does the waiting when there's a job on foreground */
 void sigchld_handler(int sig, siginfo_t* info, void* u);	/* Handles SIGCHLD for non-blocking jobs */
 void fg_handler(int sig, siginfo_t* info, void* u);			/* Handles SIGINT and SIGTSTP for blocking jobs */
 
@@ -352,8 +350,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 
 	switch(id)
 	{
-		/* bg */
-		case 1:
+		case CMD_BG:				/* TODO: how to send a job from foreground to background? (How to take away its control of the terminal?) */
 			list = job_list(JL_GET);
 			
 			if (cmd[1] != NULL)
@@ -368,8 +365,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 			}
 			break;
 
-		/* cd */
-		case 2:
+		case CMD_CD:
 			error(chdir(cmd[1]) < 0, -1);
 			path = get_current_dir_name();
 			error(path == NULL, -1);
@@ -377,14 +373,12 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 			free(path);
 			break;
 
-		/* exit and quit */
-		case 3:
-		case 6:
+		case CMD_EXIT:
+		case CMD_QUIT:
 			exit_flag = 1;
 			break;
 
-		/* fg */
-		case 4:
+		case CMD_FG:
 			list = job_list(JL_GET);
 			
 			if (cmd[1] != NULL)
@@ -397,12 +391,12 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 				list->v[jobid]->lastmodified = time(NULL);
 				kill(-list->v[jobid]->pgid, SIGCONT);
 				list->v[jobid]->blocking = 1;
+				tcsetpgrp(1, list->v[jobid]->pgid);
 				fg_wait(list->v[jobid]);
 			}
 			break;
 		
-		/* jobs */
-		case 5:
+		case CMD_JOBS:
 			list = job_list(JL_GET);
 			for (i = 0; i <= list->last; i++)
 				if (list->v[i] != NULL)
@@ -453,32 +447,6 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 	return cpid;
 }
 
-void fg_wait(JOB* job)
-{
-	int i;
-	
-	for (i = 0; i < job->ncmd && job->blocking; i++)
-	{
-		if (job->pid[i] > 0)
-		{
-			while (waitpid(job->pid[i], NULL, 0) < 0 && job->blocking); 
-			/* A suspended job stops being blocking (fg_handler sets job->blocking to 0) 				*/
-			/* The while loop is needed because if the child is killed then the wait will be canceled 	*/
-			/* (returning -1) by the call to fg_handler. It must be called again, otherwise zombie  	*/
-			/* processes would remain: fg_handler doesn't call wait and sigchld_handler doesn't wait) 	*/
-			/* for blocking jobs */
-
-		}
-	}
-
-	if (job->blocking)		/* Blocking job has terminated */
-	{
-		job_list_erase(job);
-		destroy_job(&job);
-	}
-}
-
-
 int run_job(JOB* job)
 {
 	int i, **pipes = NULL;
@@ -495,6 +463,9 @@ int run_job(JOB* job)
 
 	job->run_count = job->ncmd;
 	job_list_push(job);
+
+	if (job->blocking)
+		job->pgid = getpgid(0);
 
 	for (i = 0; i < job->ncmd; i++)
 	{
@@ -535,7 +506,32 @@ int run_job(JOB* job)
 	return 0;
 }
 
-/* ------- SIGNAL HANDLERS -------*/
+/* ------- MANAGE RUNNING THINGS -------*/
+
+void fg_wait(JOB* job)
+{
+	int i;
+	
+	for (i = 0; i < job->ncmd && job->blocking; i++)
+	{
+		if (job->pid[i] > 0)
+		{
+			while (waitpid(job->pid[i], NULL, 0) < 0 && job->blocking); 
+			/* A suspended job stops being blocking (fg_handler sets job->blocking to 0) 				*/
+			/* The while loop is needed because if the child is killed then the wait will be canceled 	*/
+			/* (returning -1) by the call to fg_handler. It must be called again, otherwise zombie  	*/
+			/* processes would remain: fg_handler doesn't call wait and sigchld_handler doesn't wait) 	*/
+			/* for blocking jobs */
+
+		}
+	}
+
+	if (job->blocking)		/* Blocking job has terminated */
+	{
+		job_list_erase(job);
+		destroy_job(&job);
+	}
+}
 
 void sigchld_handler(int sig, siginfo_t* info, void* u)
 {
@@ -582,6 +578,7 @@ void fg_handler(int sig, siginfo_t* info, void* u)
 
 	if (sig == SIGTSTP)
 		job->blocking = 0;
+
 }
 
 /* MAIN PROGRAM */

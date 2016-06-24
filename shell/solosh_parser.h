@@ -8,6 +8,16 @@
 #define SLSH_OUTPUT '>'
 #define SLSH_NOBLOCK '&'
 
+enum
+{
+	CMD_BG = 1,
+	CMD_CD,
+	CMD_EXIT,
+	CMD_FG,
+	CMD_JOBS,
+	CMD_QUIT
+};
+
 char** split_around_blank(const char* str);
 char*** make_cmd_array(const char* command);
 void print_job_cmd(char*** cmd);
