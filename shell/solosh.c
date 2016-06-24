@@ -389,9 +389,8 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 			if (jobid >= 0 && jobid <= list->last && list->v[jobid] != NULL)
 			{
 				list->v[jobid]->lastmodified = time(NULL);
-				kill(-list->v[jobid]->pgid, SIGCONT);
 				list->v[jobid]->blocking = 1;
-				tcsetpgrp(1, list->v[jobid]->pgid);
+				kill(-list->v[jobid]->pgid, SIGCONT);
 				fg_wait(list->v[jobid]);
 			}
 			break;
@@ -463,9 +462,7 @@ int run_job(JOB* job)
 
 	job->run_count = job->ncmd;
 	job_list_push(job);
-
-	if (job->blocking)
-		job->pgid = getpgid(0);
+	job->pgid = 0;
 
 	for (i = 0; i < job->ncmd; i++)
 	{
@@ -511,7 +508,8 @@ int run_job(JOB* job)
 void fg_wait(JOB* job)
 {
 	int i;
-	
+
+	tcsetpgrp(1, job->pgid);
 	for (i = 0; i < job->ncmd && job->blocking; i++)
 	{
 		if (job->pid[i] > 0)
@@ -525,7 +523,8 @@ void fg_wait(JOB* job)
 
 		}
 	}
-
+	tcsetpgrp(1, getpgid(0));
+	
 	if (job->blocking)		/* Blocking job has terminated */
 	{
 		job_list_erase(job);
@@ -538,7 +537,7 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 	JOB* job;
 
 	job = job_list_find_by_pid(info->si_pid);
-	if (job == NULL || job->blocking)	/* This handler only handles non-blocking jobs */
+	if (job == NULL)	
 		return;
 
 	switch(info->si_code)
@@ -558,6 +557,12 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 
 		case CLD_KILLED:
 			waitpid(info->si_pid, NULL, 0);
+			job_list_erase(job);
+			destroy_job(&job);
+			break;
+
+		case CLD_STOPPED:
+			job->blocking = 0;		
 			break;
 
 		default:
@@ -565,21 +570,6 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 	}
 }
 
-void fg_handler(int sig, siginfo_t* info, void* u)
-{
-	JOB* job;
-
-	job = job_list_find_foreground();
-	if (job == NULL)
-		return;
-	
-	kill(-job->pgid, sig);
-	job->lastmodified = time(NULL);
-
-	if (sig == SIGTSTP)
-		job->blocking = 0;
-
-}
 
 /* MAIN PROGRAM */
 
@@ -587,7 +577,7 @@ int main()
 {
 	char str[1024];
 	JOB* job = NULL;
-	struct sigaction chld, fg;
+	struct sigaction chld, ttou;
 
 	setpgid(0, 0);
 
@@ -596,11 +586,9 @@ int main()
 	chld.sa_sigaction = sigchld_handler;
 	error(sigaction(SIGCHLD, &chld, NULL) < 0, -1);
 
-	memset(&fg, 0, sizeof(struct sigaction));
-	fg.sa_flags |= SA_SIGINFO;
-	fg.sa_sigaction = fg_handler;
-	error(sigaction(SIGINT, &fg, NULL) < 0, -1);
-	error(sigaction(SIGTSTP, &fg, NULL) < 0, -1); 
+	memset(&ttou, 0, sizeof(struct sigaction));
+	ttou.sa_handler = SIG_IGN;
+	error(sigaction(SIGTTOU, &ttou, NULL) < 0, -1);
 
 	while(!exit_flag)
 	{
