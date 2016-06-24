@@ -55,7 +55,6 @@ JOB_LIST* job_list(int action);					/* The list is a singleton. This method is u
 int job_list_push(JOB* job);
 void job_list_erase(const JOB* job);
 JOB* job_list_find_by_pid(pid_t pid);
-JOB* job_list_find_foreground();
 int job_list_find_lastmodified_id();
 
 /* ------- RUN THINGS ------- */
@@ -68,8 +67,6 @@ int run_job(JOB* job);																					/* be destroyed in the child. */
 /* ------- MANAGE RUNNING THINGS ------- */
 void fg_wait(JOB* job);										/* This function does the waiting when there's a job on foreground */
 void sigchld_handler(int sig, siginfo_t* info, void* u);	/* Handles SIGCHLD for non-blocking jobs */
-void fg_handler(int sig, siginfo_t* info, void* u);			/* Handles SIGINT and SIGTSTP for blocking jobs */
-
 
 
 /* ------- JOBS ------- */
@@ -297,23 +294,6 @@ JOB* job_list_find_by_pid(pid_t pid)
 	return NULL;
 }
 
-JOB* job_list_find_foreground()
-{
-	int idx;
-	JOB_LIST* list = job_list(JL_GET);
-	
-	if (list == NULL)
-		return NULL;
-
-	for (idx = 0; idx <= list->last; idx++)
-	{
-		JOB* job = list->v[idx];
-		if (job != NULL && job->blocking)
-			return job;
-	}
-	return NULL;
-}
-
 int job_list_find_lastmodified_id()
 {
 	int idx, ret = -1;
@@ -350,7 +330,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 
 	switch(id)
 	{
-		case CMD_BG:				/* TODO: how to send a job from foreground to background? (How to take away its control of the terminal?) */
+		case CMD_BG:				
 			list = job_list(JL_GET);
 			
 			if (cmd[1] != NULL)
@@ -515,11 +495,10 @@ void fg_wait(JOB* job)
 		if (job->pid[i] > 0)
 		{
 			while (waitpid(job->pid[i], NULL, 0) < 0 && job->blocking); 
-			/* A suspended job stops being blocking (fg_handler sets job->blocking to 0) 				*/
+			/* A suspended job stops being blocking (sigchld_handler sets job->blocking to 0) 			*/
 			/* The while loop is needed because if the child is killed then the wait will be canceled 	*/
-			/* (returning -1) by the call to fg_handler. It must be called again, otherwise zombie  	*/
-			/* processes would remain: fg_handler doesn't call wait and sigchld_handler doesn't wait) 	*/
-			/* for blocking jobs */
+			/* (returning -1) by the call to sigchld_handler. It must be called again, otherwise zombie */
+			/* processes would remain: sigchld_handler doesn't wait for blocking jobs 					*/
 
 		}
 	}
