@@ -585,7 +585,14 @@ int main(int argc, char* argv[])
 	JOB* job = NULL;
 	struct sigaction chld, ttou;
 	struct option longopts[3];
-	int opt;
+	int opt, is_script = 0;
+	char doc[] = "SoloSH 1.0\nCopyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
+	   			 "This program comes WITHOUT ANY WARRANTY, without even the implied\n"
+			     "warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+				 "See the GNU General Public License for more details.\n\n"
+		    	 "This is free software, and you are welcome to redistribute it and/or\n"
+				 "modify it under the terms of the GNU General Public License; either\n"
+				 "version 3 of the License, or (at your option) any later version.\n\n";
 
 	longopts[0].name = opt_ver;
 	longopts[0].has_arg = no_argument;
@@ -618,27 +625,56 @@ int main(int argc, char* argv[])
 		job_list(JL_DESTROY);
 		return 0;
 	}
+	if (opt == '?')
+		return -1;
 
-	printf("SoloSH 1.0\nCopyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
-	   		"This program comes WITHOUT ANY WARRANTY, without even the implied\n"
-			"warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
-			"See the GNU General Public License for more details.\n\n"
-		    "This is free software, and you are welcome to redistribute it and/or\n"
-			"modify it under the terms of the GNU General Public License; either\n"
-			"version 3 of the License, or (at your option) any later version.\n\n");
-	
 	if (opt == 1)
+	{
+		printf("%s", doc);
 		return 0;
+	}
 
+	if (argc > 2)
+	{
+		printf("Too many arguments.\n");
+		return -1;
+	}
+	if (argc == 2)
+	{
+		int in = open(argv[1], O_RDONLY);
+		fatal_error(in < 0, -1);
+		close(0);
+		dup(in);
+		close(in);
+		is_script = 1;
+	}
+
+	if (!is_script)
+		printf("%s", doc);
+	
 	while(!exit_flag)
 	{
 		char* aux;
-		
-		getcwd(dir, 1024*sizeof(char));
-		printf("@ %s: ", dir);
+	
+		if (!is_script)
+		{
+			getcwd(dir, 1024*sizeof(char));
+			printf("@ %s: ", dir);
+		}
 
 		while(aux = fgets(str, 1024, stdin), (strlen(str) < 2 || aux == NULL))	/* TODO: not use static buffer ? */
-			printf("@ %s: ", dir);
+		{
+			if (feof(stdin))
+			{
+				exit_flag = 1;
+				printf("\n");
+				break;
+			}
+			else if (!is_script)
+				printf("@ %s: ", dir);
+		}
+
+		if (exit_flag) break;
 
 		str[strlen(str)-1] = '\0';
 		job = create_job(str);
