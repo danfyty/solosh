@@ -550,6 +550,7 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 
 	switch(info->si_code)
 	{
+		case CLD_KILLED:
 		case CLD_EXITED:
 			if (!job->blocking)	
 			{
@@ -561,12 +562,6 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 				}
 				
 			}
-			break;
-
-		case CLD_KILLED:
-			waitpid(info->si_pid, NULL, 0);
-			job_list_erase(job);
-			destroy_job(&job);
 			break;
 
 		case CLD_STOPPED:
@@ -583,7 +578,7 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 
 int main()
 {
-	char str[1024];
+	char str[1024], dir[1024];
 	JOB* job = NULL;
 	struct sigaction chld, ttou;
 
@@ -611,10 +606,11 @@ int main()
 	{
 		char* aux;
 		
-		getcwd(str, 1024*sizeof(char));
-		printf("@ %s: ", str);
+		getcwd(dir, 1024*sizeof(char));
+		printf("@ %s: ", dir);
 
-		while(aux = fgets(str, 1024, stdin), !strlen(str) || aux == NULL);	/* TODO: not use static buffer ? */
+		while(aux = fgets(str, 1024, stdin), (strlen(str) < 2 || aux == NULL))	/* TODO: not use static buffer ? */
+			printf("@ %s: ", dir);
 
 		str[strlen(str)-1] = '\0';
 		job = create_job(str);
