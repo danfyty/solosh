@@ -252,8 +252,11 @@ int job_list_push(JOB* item)
 	
 	if (list == NULL || item == NULL)
 		return -1;
+
+	pos = list->last;	
+	if (list->v[pos] != NULL)
+		pos++;
 	
-	pos = list->last + 1;
 	if (pos >= list->capacity)
 	{
 		JOB** newv;
@@ -265,7 +268,7 @@ int job_list_push(JOB* item)
 	}
 
 	list->v[pos] = item;
-	list->last++;
+	list->last = pos;
 	list->jobcount++;
 	return 0;
 }
