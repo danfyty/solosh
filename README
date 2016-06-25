@@ -1,0 +1,14 @@
+
+SoloSH
+
+Copyright (c) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>
+This is Free Open Source Software. For licensing, see COPYING
+
+----------------------------------------------------------------------
+
+SoloSH is an implementation of two programming exercises contained in POSIXeg (https://gitlab.com/monaco/posixeg/).
+The first one is libruncmd - a library to execute a command as a subprocess - specified here: https://gitlab.com/monaco/posixeg/blob/master/runcmd/exercise/runcmd.txt
+The second one is "foosh" - a POSIX shell - specified here: https://gitlab.com/monaco/posixeg/blob/master/shell/foosh/foosh.txt
+
+The implementations follow the specifications accurately, with only a few minor exceptions and particular details.
+

@@ -1,15 +1,16 @@
 dnl    configure.ac - Autoconf script 
 dnl    
-dnl    Copyright 2015  Monaco F. J.   <monaco@icmc.usp.br>
+dnl    Copyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>
+dnl	   This file is derived from POSIXeg, Copyright 2015  Monaco F. J.   <monaco@icmc.usp.br>
 dnl
-dnl    This file is part of POSIXeg. 
+dnl    This file is part of SoloSH. 
 dnl
-dnl    POSIXeg is free software: you can redistribute it and/or modify
+dnl    This program is free software: you can redistribute it and/or modify
 dnl    it under the terms of the GNU General Public License as published by
 dnl    the Free Software Foundation, either version 3 of the License, or
 dnl    (at your option) any later version.
 dnl
-dnl    POSIXeg is distributed in the hope that it will be useful,
+dnl    This program is distributed in the hope that it will be useful,
 dnl    but WITHOUT ANY WARRANTY; without even the implied warranty of
 dnl    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 dnl    GNU General Public License for more details.
