@@ -20,6 +20,7 @@
 #include <solosh_errors.h>
 #include <solosh_parser.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -576,12 +577,28 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 
 /* MAIN PROGRAM */
 
-int main()
+int main(int argc, char* argv[])
 {
 	char str[1024], dir[1024];
+	char opt_ver[] = "version", opt_comm[] = "command";
+	char shortopts[] = "c:";
 	JOB* job = NULL;
 	struct sigaction chld, ttou;
+	struct option longopts[3];
+	int opt;
 
+	longopts[0].name = opt_ver;
+	longopts[0].has_arg = no_argument;
+	longopts[0].flag = NULL;
+	longopts[0].val = 1;
+
+	longopts[1].name = opt_comm;
+	longopts[1].has_arg = required_argument;
+	longopts[1].flag = NULL;
+	longopts[1].val = 'c';
+
+	memset(longopts+2, 0, sizeof(struct option)); 
+	
 	setpgid(0, 0);
 
 	memset(&chld, 0, sizeof(struct sigaction));
@@ -593,14 +610,25 @@ int main()
 	ttou.sa_handler = SIG_IGN;
 	error(sigaction(SIGTTOU, &ttou, NULL) < 0, -1);
 
-	printf("SoloSH Copyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
-	   		"This program comes WITHOUT ANY WARRANTY, without even the\n"
-			"implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+	opt = getopt_long(argc, argv, shortopts, longopts, NULL);
+	if (opt == 'c')
+	{
+		job = create_job(optarg);
+		run_job(job);
+		job_list(JL_DESTROY);
+		return 0;
+	}
+
+	printf("SoloSH 1.0\nCopyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
+	   		"This program comes WITHOUT ANY WARRANTY, without even the implied\n"
+			"warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
 			"See the GNU General Public License for more details.\n\n"
 		    "This is free software, and you are welcome to redistribute it and/or\n"
-			"modify it under the terms of the GNU General Public License; either"
+			"modify it under the terms of the GNU General Public License; either\n"
 			"version 3 of the License, or (at your option) any later version.\n\n");
-
+	
+	if (opt == 1)
+		return 0;
 
 	while(!exit_flag)
 	{
