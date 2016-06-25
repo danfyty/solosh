@@ -365,6 +365,8 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 				list->v[jobid]->lastmodified = time(NULL);
 				kill(-list->v[jobid]->pgid, SIGCONT);
 			}
+			else
+				printf("No such job.\n");
 			break;
 
 		case CMD_CD:
@@ -395,6 +397,8 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 				kill(-list->v[jobid]->pgid, SIGCONT);
 				fg_wait(list->v[jobid]);
 			}
+			else
+				printf("No such job.\n");
 			break;
 		
 		case CMD_JOBS:
@@ -442,7 +446,7 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 		}
 		destroy_pipes(&pipes, npipes);
 		execvp(cmd[0], cmd);
-		/* TODO: No such command error */
+		printf("%s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	return cpid;
@@ -494,7 +498,10 @@ int run_job(JOB* job)
 		if (job->pid[i] <= 0)
 			job->run_count--;		/* Built-in commands and failed executions are not running processes */
 		else if (job->pgid == 0)
+		{
 			job->pgid = job->pid[i];		
+			job->lastmodified = time(NULL); /* A new job is a 'recently modified job' to fg/bg default */
+		}
 	}
 	
 	destroy_pipes(&pipes, job->ncmd-1);
@@ -591,13 +598,21 @@ int main()
 	ttou.sa_handler = SIG_IGN;
 	error(sigaction(SIGTTOU, &ttou, NULL) < 0, -1);
 
+	printf("SoloSH Copyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
+	   		"This program comes WITHOUT ANY WARRANTY, without even the\n"
+			"implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+			"See the GNU General Public License for more details.\n\n"
+		    "This is free software, and you are welcome to redistribute it and/or\n"
+			"modify it under the terms of the GNU General Public License; either"
+			"version 3 of the License, or (at your option) any later version.\n\n");
+
+
 	while(!exit_flag)
 	{
 		char* aux;
-		/*
+		
 		getcwd(str, 1024*sizeof(char));
-		printf("@%s ", str);
-		*/
+		printf("@ %s: ", str);
 
 		while(aux = fgets(str, 1024, stdin), !strlen(str) || aux == NULL);	/* TODO: not use static buffer ? */
 
