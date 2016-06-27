@@ -30,6 +30,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define SLSH_MAX_PATH 2048
+
 /* ------- JOBS -------*/
 
 typedef struct job
@@ -344,7 +346,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 {
 	int id, i, jobid;
 	JOB_LIST* list;
-	char* path = NULL;
+	char path[SLSH_MAX_PATH];
 
 	if (cmd == NULL)
 		return -1;
@@ -372,10 +374,9 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 
 		case CMD_CD:
 			error(chdir(cmd[1]) < 0, -1);
-			path = get_current_dir_name();
+			getcwd(path, SLSH_MAX_PATH*sizeof(char)); 
 			error(path == NULL, -1);
-			error(setenv("PWD", path, 1) < 0, (free(path), -1));
-			free(path);
+			error(setenv("PWD", path, 1) < 0, -1);
 			break;
 
 		case CMD_EXIT:
@@ -524,12 +525,12 @@ void fg_wait(JOB* job)
 	{
 		if (job->pid[i] > 0)
 		{
-			while (waitpid(job->pid[i], NULL, 0) < 0 && job->blocking); 
-			/* A suspended job stops being blocking (sigchld_handler sets job->blocking to 0) 			*/
-			/* The while loop is needed because if the child is killed then the wait will be canceled 	*/
-			/* (returning -1) by the call to sigchld_handler. It must be called again, otherwise zombie */
-			/* processes would remain: sigchld_handler doesn't wait for blocking jobs 					*/
-
+			while (waitpid(job->pid[i], NULL, 0) < 0 && job->blocking)
+			{
+				if (errno == ECHILD)	/* A suspended job stops being blocking (sigchld_handler sets job->blocking to 0) 			*/
+					break;          	/* The while loop is needed because if the child is killed then the wait will be canceled 	*/
+			}                       	/* (returning -1) by the call to sigchld_handler. It must be called again, otherwise zombie */
+			                        	/* processes would remain: sigchld_handler doesn't wait for blocking jobs 					*/
 		}
 	}
 	tcsetpgrp(1, getpgid(0));
@@ -579,14 +580,14 @@ void sigchld_handler(int sig, siginfo_t* info, void* u)
 
 int main(int argc, char* argv[])
 {
-	char str[1024], dir[1024];
+	char* str, dir[SLSH_MAX_PATH];
 	char opt_ver[] = "version", opt_comm[] = "command";
 	char shortopts[] = "c:";
 	JOB* job = NULL;
 	struct sigaction chld, ttou;
 	struct option longopts[3];
 	int opt, is_script = 0;
-	char doc[] = "SoloSH 1.0\nCopyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
+	char doc[] = "SoloSH 1.0 (beta)\nCopyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
 	   			 "This program comes WITHOUT ANY WARRANTY, without even the implied\n"
 			     "warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
 				 "See the GNU General Public License for more details.\n\n"
@@ -644,7 +645,7 @@ int main(int argc, char* argv[])
 		int in = open(argv[1], O_RDONLY);
 		fatal_error(in < 0, -1);
 		close(0);
-		dup(in);
+		fatal_error(dup(in) < 0, -1);
 		close(in);
 		is_script = 1;
 	}
@@ -652,17 +653,15 @@ int main(int argc, char* argv[])
 	if (!is_script)
 		printf("%s", doc);
 	
-	while(!exit_flag)
+	while (!exit_flag)
 	{
-		char* aux;
-	
 		if (!is_script)
 		{
-			getcwd(dir, 1024*sizeof(char));
+			getcwd(dir, SLSH_MAX_PATH*sizeof(char));
 			printf("@ %s: ", dir);
 		}
 
-		while(aux = fgets(str, 1024, stdin), (strlen(str) < 2 || aux == NULL))	/* TODO: not use static buffer ? */
+		while (str = read_line(), str == NULL)
 		{
 			if (feof(stdin))
 			{
@@ -673,14 +672,14 @@ int main(int argc, char* argv[])
 			else if (!is_script)
 				printf("@ %s: ", dir);
 		}
-
-		if (exit_flag) break;
-
-		str[strlen(str)-1] = '\0';
-		job = create_job(str);
-
-		run_job(job);
-		str[0] = '\0';
+		
+		if (!exit_flag)
+		{
+			job = create_job(str);
+			run_job(job);
+		}
+		free(str);
+		str = NULL;
 	}
 
 	job_list(JL_DESTROY);

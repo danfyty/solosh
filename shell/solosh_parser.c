@@ -24,9 +24,40 @@
 #include <string.h>
 
 #define INITIAL_TOKEN_ARRAY_CAP 10
+#define INITIAL_LINE_CAP 10
 
 static const int nbcmd = 6;
 static const char* builtin_cmd[] = {"bg", "cd", "exit", "fg", "jobs", "quit"};
+
+char* read_line()
+{
+	char* line = (char*) malloc(sizeof(char)*INITIAL_LINE_CAP);
+	int sz = 0, cap = INITIAL_LINE_CAP;
+	int c;
+
+	error(line == NULL, NULL);
+	do
+	{
+		c = getchar();
+		if (sz == cap)
+		{
+			char* newline = (char*) realloc(line, sizeof(char)*2*cap);
+			error(newline == NULL, (free(line), NULL));
+			line = newline;
+			cap *= 2;
+		}
+		line[sz++] = c;
+	} while (c != EOF && c != '\n');
+	line[--sz] = '\0';
+
+	if (sz == 0)
+	{
+		free(line);
+		return NULL;
+	}
+
+	return line;
+}
 
 int get_builtin_cmd(const char* cmd)
 {
@@ -204,7 +235,7 @@ int get_io_redir_file(const char* command, int io)
 	if (io == SLSH_INPUT)
 		file = open(filename, O_RDONLY);
 	else
-		file = open(filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+		file = open(filename, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
 	
 	free(filename);
 	return file;	

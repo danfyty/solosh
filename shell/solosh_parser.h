@@ -44,5 +44,6 @@ int get_io_redir_file(const char* command, int io);
 char* clean_command(const char* command);
 int is_blocking(const char* command);
 int get_builtin_cmd(const char* command);
+char* read_line();
 
 #endif
