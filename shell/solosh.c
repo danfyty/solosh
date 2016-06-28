@@ -78,7 +78,6 @@ int job_list_push(JOB* job);
 void job_list_erase(const JOB* job);
 JOB* job_list_find_by_pid(pid_t pid);
 int job_list_find_lastmodified_id();
-
 /* ------- RUN THINGS ------- */
 
 int exit_flag = 0;								/* Tells the main loop when to stop looping. Set by run_builtin_cmd. */
@@ -347,6 +346,7 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 	int id, i, jobid;
 	JOB_LIST* list;
 	char path[SLSH_MAX_PATH];
+    char *raux;
 
 	if (cmd == NULL)
 		return -1;
@@ -374,7 +374,8 @@ int run_builtin_cmd(char* cmd[])	/* TODO: make these work correctly inside pipes
 
 		case CMD_CD:
 			error(chdir(cmd[1]) < 0, -1);
-			getcwd(path, SLSH_MAX_PATH*sizeof(char)); 
+			raux = getcwd(path, SLSH_MAX_PATH*sizeof(char)); 
+            error(raux == NULL, -1);
 			error(path == NULL, -1);
 			error(setenv("PWD", path, 1) < 0, -1);
 			break;
@@ -432,7 +433,14 @@ pid_t run_cmd(char* cmd[], int input_file, int output_file, int** pipes, int npi
 	
 	if (cpid == 0)
 	{
-		fatal_error(setpgid(0, pgid) < 0, -1);	/* pgid == 0 -> new group with id equal to the current pid */
+        fatal_error(setpgid(0, pgid) < 0, -1);	/* pgid == 0 -> new group with id equal to the current pid */
+
+         signal (SIGINT, SIG_DFL);
+         signal (SIGQUIT, SIG_DFL);
+         signal (SIGTSTP, SIG_DFL);
+         signal (SIGTTIN, SIG_DFL);
+         signal (SIGTTOU, SIG_DFL);
+         signal (SIGCHLD, SIG_DFL);
 
 		if (input_file != 0)
 		{
@@ -520,7 +528,7 @@ void fg_wait(JOB* job)
 {
 	int i;
 
-	tcsetpgrp(1, job->pgid);
+	tcsetpgrp(STDIN_FILENO, job->pgid);
 	for (i = 0; i < job->ncmd && job->blocking; i++)
 	{
 		if (job->pid[i] > 0)
@@ -533,7 +541,7 @@ void fg_wait(JOB* job)
 			                        	/* processes would remain: sigchld_handler doesn't wait for blocking jobs 					*/
 		}
 	}
-	tcsetpgrp(1, getpgid(0));
+	tcsetpgrp(STDIN_FILENO, getpgid(0));
 	
 	if (job->blocking)		/* Blocking job has terminated */
 	{
@@ -584,7 +592,7 @@ int main(int argc, char* argv[])
 	char opt_ver[] = "version", opt_comm[] = "command";
 	char shortopts[] = "c:";
 	JOB* job = NULL;
-	struct sigaction chld, ttou;
+	struct sigaction chld;
 	struct option longopts[3];
 	int opt, is_script = 0;
 	char doc[] = "SoloSH 1.0 (beta)\nCopyright (C) 2016 Rodrigo Weigert <rodrigo.weigert@usp.br>\n"
@@ -614,9 +622,11 @@ int main(int argc, char* argv[])
 	chld.sa_sigaction = sigchld_handler;
 	error(sigaction(SIGCHLD, &chld, NULL) < 0, -1);
 
-	memset(&ttou, 0, sizeof(struct sigaction));
-	ttou.sa_handler = SIG_IGN;
-	error(sigaction(SIGTTOU, &ttou, NULL) < 0, -1);
+    signal (SIGINT, SIG_IGN);
+    signal (SIGQUIT, SIG_IGN);
+    signal (SIGTSTP, SIG_IGN);
+    signal (SIGTTIN, SIG_IGN);
+    signal (SIGTTOU, SIG_IGN);
 
 	opt = getopt_long(argc, argv, shortopts, longopts, NULL);
 	if (opt == 'c')
@@ -657,7 +667,8 @@ int main(int argc, char* argv[])
 	{
 		if (!is_script)
 		{
-			getcwd(dir, SLSH_MAX_PATH*sizeof(char));
+			char *raux = getcwd(dir, SLSH_MAX_PATH*sizeof(char));
+            fatal_error (raux == NULL, -1);
 			printf("@ %s: ", dir);
 		}
 
